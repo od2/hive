@@ -5,7 +5,9 @@
   </p>
 </div>
 
-Copyright © 2020 Richard Patel ([@terorie][@terorie]), [@fionera][@fionera]. All rights reserved.
+_Work in Progress! :warning:_ Please come back later.
+
+<small>Copyright © 2020 Richard Patel ([@terorie][@terorie]), Tim Windelschmidt ([@fionera][@fionera]). All rights reserved.</small>
 
   [@terorie]: https://github.com/terorie
   [@fionera]: https://github.com/fionera
