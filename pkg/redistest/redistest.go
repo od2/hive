@@ -45,8 +45,8 @@ func NewRedis(ctx context.Context, t *testing.T) *Redis {
 	go func() {
 		defer wg.Done()
 		output, err := redisCmd.CombinedOutput()
-		t.Log("Redis exited: ", err)
-		t.Log(string(output))
+		t.Log("Redis exited:", err)
+		t.Log("Redis Logs:\n" + string(output))
 	}()
 
 	t.Log("redistest: Started Redis")

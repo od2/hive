@@ -15,17 +15,17 @@ type Config struct {
 }
 
 // ExpirationWorker loops over the expiration event queue,
-// and dead-letters any tasks that were not finished within the TTL.
+// and dead-letters any tasks that were not finished within the TTL using a callback.
+// It is safe to run multiple instances on the same keys.
 type ExpirationWorker struct {
 	// Required components
 	Log      *zap.Logger
 	Redis    *redis.Client
 	Callback ExpireCallback
 	// Required config
-	InflightHash string
-	InflightList string
-	EmptyBackoff time.Duration
-	BatchSize    uint // max tasks to drop at once using Lua script
+	Keys         Keys
+	EmptyBackoff time.Duration // time to sleep when the queue is empty
+	BatchSize    uint          // max tasks to drop at once using Lua script
 }
 
 // ExpireCallback is called when a claim for a task expires.
@@ -40,6 +40,8 @@ func (e *ExpirationWorker) Run(ctx context.Context) error {
 	}
 }
 
+// step runs the expiration Lua script once, processes callbacks,
+// and sleeps the minimum time until the next expiration can occur.
 func (e *ExpirationWorker) step(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -67,10 +69,12 @@ for i=1,ARGV[1],1 do
 	if exp > t then break end
 	redis.call("LTRIM", KEYS[1], 0, -2)
 	local claim = redis.call("HGET", KEYS[2], task_id)
-    table.insert(ret, claim)
-    table.insert(ret, task_id)
-    redis.log(redis.LOG_VERBOSE, "redisqueue: Expire " .. KEYS[1] .. " " .. task_id .. " claim " .. claim)
-	redis.call("HDEL", KEYS[2], task_id)
+	if claim then
+		table.insert(ret, claim)
+		table.insert(ret, task_id)
+		redis.log(redis.LOG_VERBOSE, "redisqueue: Expire " .. KEYS[1] .. " " .. task_id .. " claim " .. claim)
+		redis.call("HDEL", KEYS[2], task_id)
+	end
 end
 table.insert(ret, sleep)
 table.insert(ret, "sleep")
@@ -79,8 +83,8 @@ return ret
 	preWait := time.Now()
 	preWaitEpoch := preWait.Unix()
 	res, err := e.Redis.Eval(ctx, expireScript,
-		[]string{e.InflightList, e.InflightHash}, // keys
-		e.BatchSize, preWaitEpoch,                // args
+		[]string{e.Keys.ExpireList, e.Keys.InflightHash},
+		e.BatchSize, preWaitEpoch, // args
 	).Result()
 	if err != nil {
 		return fmt.Errorf("failed to drop expired keys via Lua: %w", err)

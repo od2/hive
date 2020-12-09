@@ -1,4 +1,4 @@
-module legion2
+module go.od2.network/hive
 
 go 1.15
 

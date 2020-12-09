@@ -9,8 +9,8 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.od2.network/hive/pkg/redistest"
 	"go.uber.org/zap/zaptest"
-	"legion2/pkg/redistest"
 )
 
 func TestExpirationWorker(t *testing.T) {
@@ -29,8 +29,7 @@ func TestExpirationWorker(t *testing.T) {
 			callbacks <- claimedTask{taskID, claim}
 			return nil
 		},
-		InflightHash: "INFLIGHT_H",
-		InflightList: "INFLIGHT_L",
+		Keys:         KeysForPrefix("Q"),
 		EmptyBackoff: 100 * time.Millisecond,
 		BatchSize:    2,
 	}
@@ -43,16 +42,16 @@ func TestExpirationWorker(t *testing.T) {
 	require.NoError(t, err)
 	// Make the test backoff with no items
 	time.Sleep(300 * time.Millisecond)
-	// Push 4 tasks to Redis, 3 expire instantly, 1 expires after 3 seconds.
+	// Push 4 tasks to Redis, 2 expire instantly, 1 is already removed, 1 expires after 3 seconds.
 	pushTime := time.Now().Unix()
 	_, err = instance.Client.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 		claims := []string{
 			"t1", "c1",
-			"t2", "c2",
+			// t2 was already removed (Consumers.DropClaims)
 			"t3", "c3",
 			"t4", "c4",
 		}
-		if err := instance.Client.HSet(ctx, "INFLIGHT_H", claims).Err(); err != nil {
+		if err := instance.Client.HSet(ctx, expWorker.Keys.InflightHash, claims).Err(); err != nil {
 			return err
 		}
 		expireList := []string{
@@ -61,38 +60,37 @@ func TestExpirationWorker(t *testing.T) {
 			fmt.Sprintf("t3:%d", pushTime),
 			fmt.Sprintf("t4:%d", pushTime+2),
 		}
-		if err := instance.Client.LPush(ctx, "INFLIGHT_L", expireList).Err(); err != nil {
+		if err := instance.Client.LPush(ctx, expWorker.Keys.ExpireList, expireList).Err(); err != nil {
 			return err
 		}
 		return nil
 	})
 	require.NoError(t, err)
 	t.Log("Pushed 4 items to in-flight")
-	// Wait for 3 expirations to come in.
-	first3Timer := time.NewTimer(time.Second)
-	var first3Callbacks []claimedTask
-	defer first3Timer.Stop()
+	// Wait for 2 expirations to come in.
+	firstTimer := time.NewTimer(time.Second)
+	var firstCallbacks []claimedTask
+	defer firstTimer.Stop()
 first3Collect:
 	for {
 		select {
-		case <-first3Timer.C:
+		case <-firstTimer.C:
 			break first3Collect
 		case ct := <-callbacks:
-			first3Callbacks = append(first3Callbacks, ct)
+			firstCallbacks = append(firstCallbacks, ct)
 		}
 	}
-	// We should get exactly 3 tasks that expired.
+	// We should get exactly 2 tasks that expired.
 	require.Equal(t, []claimedTask{
 		{taskID: "t1", claim: "c1"},
-		{taskID: "t2", claim: "c2"},
 		{taskID: "t3", claim: "c3"},
-	}, first3Callbacks)
-	t.Log("Got first 3 expired tasks")
+	}, firstCallbacks)
+	t.Log("Got first 2 expired tasks")
 	// Ensure the items were deleted.
-	inflightH, err := instance.Client.HGetAll(ctx, "INFLIGHT_H").Result()
+	inflightH, err := instance.Client.HGetAll(ctx, expWorker.Keys.InflightHash).Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"t4": "c4"}, inflightH)
-	inflightL, err := instance.Client.LRange(ctx, "INFLIGHT_L", 0, -1).Result()
+	inflightL, err := instance.Client.LRange(ctx, expWorker.Keys.ExpireList, 0, -1).Result()
 	require.NoError(t, err)
 	assert.Equal(t, []string{fmt.Sprintf("t4:%d", pushTime+2)}, inflightL)
 	// Wait another 2 seconds for the last one to come in.
@@ -114,10 +112,10 @@ last1Collect:
 	}, last1Callbacks)
 	t.Log("Got last expired task")
 	// Ensure the items were deleted.
-	inflightH, err = instance.Client.HGetAll(ctx, "INFLIGHT_H").Result()
+	inflightH, err = instance.Client.HGetAll(ctx, expWorker.Keys.InflightHash).Result()
 	require.NoError(t, err)
 	assert.Len(t, inflightH, 0)
-	inflightL, err = instance.Client.LRange(ctx, "INFLIGHT_L", 0, -1).Result()
+	inflightL, err = instance.Client.LRange(ctx, expWorker.Keys.ExpireList, 0, -1).Result()
 	require.NoError(t, err)
 	assert.Len(t, inflightL, 0)
 }
