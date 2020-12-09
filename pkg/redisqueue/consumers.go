@@ -28,6 +28,7 @@ func (c *Consumers) ClaimTasks(ctx context.Context, claimer string, n uint) ([]s
 	// Key 3: Expire list
 	// Returns list of task IDs.
 	const claimScript = `
+redis.replicate_commands()
 local ret = {}
 for i=1,ARGV[2],1 do
 	local item = redis.call("SRANDMEMBER", KEYS[1])
@@ -74,6 +75,7 @@ func (c *Consumers) DropClaims(ctx context.Context, claimer string, taskIDs []st
 	// Key 1: In-flight hash
 	// Returns whether claimer matches.
 	const dropClaimsScript = `
+redis.replicate_commands()
 local ret = {}
 local claims = redis.call("HMGET", KEYS[1], unpack(ARGV, 2))
 for i=1,#claims,2 do

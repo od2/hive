@@ -55,6 +55,7 @@ func (e *ExpirationWorker) step(ctx context.Context) error {
 	// - "exp" set to seconds until next expiration, or -1 if no elements
 	// - other task IDs mapping to task claims
 	const expireScript = `
+redis.replicate_commands()
 local ret = {}
 local sleep = 0
 for i=1,ARGV[1],1 do
