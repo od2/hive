@@ -9,7 +9,7 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-// BitMap uses Redis BITFIELD to implement Set.
+// BitMap uses Redis BITFIELD to implement Dedup.
 //
 // Items must be numbers, or else operations fail.
 //
@@ -26,10 +26,10 @@ type BitMap struct {
 }
 
 // AddItems flips bits in the set to one.
-func (b *BitMap) AddItems(ctx context.Context, items []string) error {
+func (b *BitMap) AddItems(ctx context.Context, items []Item) error {
 	keys := make([]uint64, 0, len(items))
 	for _, item := range items {
-		num, err := strconv.ParseUint(item, 10, 64)
+		num, err := strconv.ParseUint(item.DedupKey(), 10, 64)
 		if err != nil {
 			return fmt.Errorf("item is not a number: \"%s\"", item)
 		}
@@ -86,31 +86,38 @@ func (i *bitMapInsert) flush() error {
 	return nil
 }
 
+type bitmapEntry struct {
+	num  uint64
+	item Item
+}
+
 // DedupItems returns a copy of the provided items slice except things present in the bitmap.
 // The output won't contain any duplicate, even in the case of multiple items.
-func (b *BitMap) DedupItems(ctx context.Context, items []string) ([]string, error) {
-	// Parse the keys from strings.
-	sortedKeys := make([]uint64, len(items))
-	for i, item := range items {
-		num, err := strconv.ParseUint(item, 10, 64)
+func (b *BitMap) DedupItems(ctx context.Context, items []Item) ([]Item, error) {
+	sorted := make([]bitmapEntry, 0, len(items))
+	for _, item := range items {
+		num, err := strconv.ParseUint(item.DedupKey(), 10, 64)
 		if err != nil {
 			return items, fmt.Errorf("item is not a number: \"%s\"", item)
 		}
-		sortedKeys[i] = num
+		sorted = append(sorted, bitmapEntry{
+			num:  num,
+			item: item,
+		})
 	}
 	// Sort the keys.
-	sort.Slice(sortedKeys, func(i, j int) bool {
-		return sortedKeys[i] < sortedKeys[j]
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].num < sorted[j].num
 	})
-	// Deduplicate the keys.
+	// Deduplicate items within the batch.
 	var lastKey uint64
-	keys := make([]uint64, 0, len(items))
-	for i, k := range sortedKeys {
-		if i > 0 && lastKey == k {
+	entries := make([]bitmapEntry, 0, len(items))
+	for i, entry := range sorted {
+		if i > 0 && lastKey == entry.num {
 			continue
 		}
-		keys = append(keys, k)
-		lastKey = k
+		entries = append(entries, entry)
+		lastKey = entry.num
 	}
 	// Execute batch lookups against Redis in a pipeline.
 	pipe := b.Redis.Pipeline()
@@ -120,8 +127,8 @@ func (b *BitMap) DedupItems(ctx context.Context, items []string) ([]string, erro
 		ctx:  ctx,
 		pipe: pipe,
 	}
-	for _, key := range keys {
-		if err := lookup.lookup(key); err != nil {
+	for _, entry := range entries {
+		if err := lookup.lookup(entry.num); err != nil {
 			return nil, err
 		}
 	}
@@ -134,7 +141,7 @@ func (b *BitMap) DedupItems(ctx context.Context, items []string) ([]string, erro
 	}
 	// Filter the keys based on the result by Redis.
 	i := int64(0)
-	var filtered []string
+	var filtered []Item
 	for _, cmd := range lookup.cmds {
 		bits, err := cmd.Result()
 		if err != nil {
@@ -142,7 +149,7 @@ func (b *BitMap) DedupItems(ctx context.Context, items []string) ([]string, erro
 		}
 		for _, bit := range bits {
 			if bit == 0 {
-				filtered = append(filtered, strconv.FormatUint(keys[i], 10))
+				filtered = append(filtered, entries[i].item)
 			}
 			i++
 		}
