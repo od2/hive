@@ -28,8 +28,17 @@ func TestBitMap(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add some random items.
-	assert.EqualError(t, bitmap.AddItems(ctx, []string{"1", "3000", "1023", "a"}), `item is not a number: "a"`)
-	require.NoError(t, bitmap.AddItems(ctx, []string{"1", "3000", "1023"}))
+	assert.EqualError(t, bitmap.AddItems(ctx, []Item{
+		StringItem("1"),
+		StringItem("3000"),
+		StringItem("1023"),
+		StringItem("a"),
+	}), `item is not a number: "a"`)
+	require.NoError(t, bitmap.AddItems(ctx, []Item{
+		StringItem("1"),
+		StringItem("3000"),
+		StringItem("1023"),
+	}))
 
 	buf, err := bitmap.Redis.Get(ctx, "BITMAP-0").Bytes()
 	require.NoError(t, err)
@@ -44,12 +53,33 @@ func TestBitMap(t *testing.T) {
 	assert.Equal(t, bucket1Exp, buf)
 
 	// Try dedup.
-	_, err = bitmap.DedupItems(ctx, []string{"2999", "d", "3", "3000", "c", "b", "1"})
+	_, err = bitmap.DedupItems(ctx, []Item{
+		StringItem("2999"),
+		StringItem("d"),
+		StringItem("3"),
+		StringItem("3000"),
+		StringItem("c"),
+		StringItem("b"),
+		StringItem("1"),
+	})
 	assert.EqualError(t, err, `item is not a number: "d"`)
-	deduped, err := bitmap.DedupItems(ctx, []string{"2999", "2999", "3", "3000", "1"})
+	deduped, err := bitmap.DedupItems(ctx, []Item{
+		StringItem("2999"),
+		StringItem("2999"),
+		StringItem("3"),
+		StringItem("3000"),
+		StringItem("1"),
+	})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"3", "2999"}, deduped)
+	assert.Equal(t, []Item{
+		StringItem("3"),
+		StringItem("2999"),
+	}, deduped)
 
 	// Add the same items again.
-	require.NoError(t, bitmap.AddItems(ctx, []string{"1", "3000", "1023"}))
+	require.NoError(t, bitmap.AddItems(ctx, []Item{
+		StringItem("1"),
+		StringItem("3000"),
+		StringItem("1023"),
+	}))
 }
