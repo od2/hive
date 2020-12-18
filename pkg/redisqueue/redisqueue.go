@@ -34,7 +34,7 @@ package redisqueue
 
 // Keys holds the Redis keys used.
 type Keys struct {
-	PendingSet   string // set of pending and in-flight tasks
+	PendingHash  string // pending and in-flight tasks
 	InflightHash string // mapping from task IDs (inflight only)
 	ExpireList   string // list of task IDs with expiration time (inflight only)
 }
@@ -42,7 +42,7 @@ type Keys struct {
 // KeysForPrefix creates Keys with a common prefix.
 func KeysForPrefix(prefix string) Keys {
 	return Keys{
-		PendingSet:   prefix + "_P",
+		PendingHash:  prefix + "_P",
 		InflightHash: prefix + "_I",
 		ExpireList:   prefix + "_E",
 	}

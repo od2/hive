@@ -16,10 +16,17 @@ type Producer struct {
 }
 
 // PushTasks adds task IDs to the queue if they don't already exist.
-func (p *Producer) PushTasks(ctx context.Context, taskIDs []string) error {
-	sAddArgs := make([]interface{}, len(taskIDs))
-	for i, taskID := range taskIDs {
-		sAddArgs[i] = taskID
+func (p *Producer) PushTasks(ctx context.Context, kvps []KeyValue) error {
+	hmSetArgs := make([]interface{}, len(kvps)*2)
+	for i, kvp := range kvps {
+		hmSetArgs[i*2] = kvp.Key
+		hmSetArgs[i*2+1] = kvp.Value
 	}
-	return p.Redis.SAdd(ctx, p.Keys.PendingSet, sAddArgs).Err()
+	return p.Redis.HMSet(ctx, p.Keys.PendingHash, hmSetArgs...).Err()
+}
+
+// Binary key-value pair.
+type KeyValue struct {
+	Key   []byte
+	Value []byte
 }

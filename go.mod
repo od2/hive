@@ -10,4 +10,5 @@ require (
 	github.com/jmoiron/sqlx v1.2.1-0.20201120164427-00c6e74d816a
 	github.com/stretchr/testify v1.6.1
 	go.uber.org/zap v1.16.0
+	google.golang.org/grpc v1.34.0
 )

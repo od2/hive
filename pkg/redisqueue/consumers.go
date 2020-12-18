@@ -19,31 +19,34 @@ type Consumers struct {
 }
 
 // ClaimTasks attaches random task IDs to a claimer and returns the task IDs.
-func (c *Consumers) ClaimTasks(ctx context.Context, claimer string, n uint) ([]string, error) {
+func (c *Consumers) ClaimTasks(ctx context.Context, claimer string, n uint) ([]KeyValue, error) {
 	// Script: Bulk move tasks from pending to claimed.
 	// Argument 1: Claimer string
 	// Argument 2: Task count
-	// Key 1: Pending set
+	// Key 1: Pending hash
 	// Key 2: In-flight hash
 	// Key 3: Expire list
 	// Returns list of task IDs.
 	const claimScript = `
 redis.replicate_commands()
 local ret = {}
-for i=1,ARGV[2],1 do
-	local item = redis.call("SRANDMEMBER", KEYS[1])
-	if not item then break end
-	redis.call("SREM", KEYS[1], item)
-	redis.call("HSET", KEYS[2], item, ARGV[1])
-	redis.call("LPUSH", KEYS[3], string.format("%s:%d", item, ARGV[3]))
-	table.insert(ret, item)
+local hscan_res = redis.call("HSCAN", KEYS[1], 0, COUNT, ARGV[2])
+local elems = hscan_res[2]
+local n = math.min(#elems, ARGV[2])
+for i=1,n,2 do
+	local key = elems[i]
+	local value = elems[i+1]
+	redis.call("HSET", KEYS[2], key, value)
+	redis.call("LPUSH", KEYS[3], cmsgpack.pack(key, value, ARGV[3]))
+	table.insert(ret, key)
+	table.insert(ret, value)
 end
 return ret
 `
 	now := time.Now().Unix()
 	expTime := now + int64(c.TTL)
 	res, err := c.Redis.Eval(ctx, claimScript,
-		[]string{c.Keys.PendingSet, c.Keys.InflightHash, c.Keys.ExpireList},
+		[]string{c.Keys.PendingHash, c.Keys.InflightHash, c.Keys.ExpireList},
 		claimer, int64(n), expTime).Result()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get claims via Lua: %w", err)
@@ -53,7 +56,7 @@ return ret
 		return nil, fmt.Errorf("failed to get claims via Lua: invalid return %#v", res)
 	}
 	taskIDs := make([]string, len(taskIDsI))
-	for i, taskIDI := range taskIDsI {
+	for i := 0; i < taskIDsI; i++ {
 		taskID, ok := taskIDI.(string)
 		if !ok {
 			return nil, fmt.Errorf("invalid entry in claims batch: %#v", taskID)
@@ -78,13 +81,14 @@ func (c *Consumers) DropClaims(ctx context.Context, claimer string, taskIDs []st
 redis.replicate_commands()
 local ret = {}
 local claims = redis.call("HMGET", KEYS[1], unpack(ARGV, 2))
+local matched = 1
 for i=1,#claims,2 do
 	if claims[i] ~= ARGV[1] then
-		return 0
+		matched = 0
 	end
 end
 redis.call("HDEL", KEYS[1], unpack(ARGV, 2))
-return 1
+return matched
 `
 	varargs := make([]interface{}, len(taskIDs)+1)
 	varargs[0] = claimer

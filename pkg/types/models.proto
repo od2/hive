@@ -7,7 +7,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 message ItemLocator {
-  int64 collection = 1;
+  string collection = 1;
   string id = 2;
 }
 
@@ -31,4 +31,16 @@ message TaskResult {
   TaskStatus status = 4;
   google.protobuf.Timestamp finish_time = 5;
   google.protobuf.Duration duration = 6;
+}
+
+service Tasks {
+  rpc GetTasks (GetTasksRequest) returns (GetTasksResponse) {}
+}
+
+message GetTasksRequest {
+  int32 num_tasks = 1;
+}
+
+message GetTasksResponse {
+  repeated ItemLocator locators = 1;
 }
