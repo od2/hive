@@ -33,14 +33,29 @@ message TaskResult {
   google.protobuf.Duration duration = 6;
 }
 
-service Tasks {
-  rpc GetTasks (GetTasksRequest) returns (GetTasksResponse) {}
+// Assignments streams task assignments to workers.
+service Assignments {
+  // StartWork marks the worker as activated allocates a channel for assignment streams.
+  rpc StartWork(StartWorkRequest) returns (StartWorkResponse) {}
+  // StopWork marks the worker to be stopped.
+  // The pipeline actually stops when all items have been consumed or rejected.
+  rpc StopWork(StopWorkRequest) returns (StopWorkResponse) {}
+  // StreamAssignments creates a server-to-client assignment stream.
+  // The assignments are load-balanced over all the active assignment streams.
+  rpc StreamAssignments(StreamAssignmentsRequest) returns (stream Assignment) {}
 }
 
-message GetTasksRequest {
-  int32 num_tasks = 1;
-}
+message StartWorkRequest {}
+message StartWorkResponse {}
 
-message GetTasksResponse {
-  repeated ItemLocator locators = 1;
+message StopWorkRequest {}
+message StopWorkResponse {}
+
+message StreamAssignmentsRequest {}
+
+// Assignment is the
+message Assignment {
+  ItemLocator locator = 1;
+  int32 kafka_partition = 2;
+  int64 kafka_offset = 3;
 }
