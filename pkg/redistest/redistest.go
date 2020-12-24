@@ -2,6 +2,7 @@
 package redistest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io/ioutil"
@@ -42,12 +43,27 @@ func NewRedis(ctx context.Context, t *testing.T) *Redis {
 	redisCmd.Dir = dir
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
-	go func() {
+	go func(redisCmd *exec.Cmd) {
 		defer wg.Done()
-		output, err := redisCmd.CombinedOutput()
+		// Log stdout line-by-line
+		stdoutLogger := &writeLogger{
+			line: func(s string) {
+				t.Log("Redis:", s)
+			},
+		}
+		defer stdoutLogger.Flush()
+		redisCmd.Stdout = stdoutLogger
+		// Log stderr line-by-line
+		stderrLogger := &writeLogger{
+			line: func(s string) {
+				t.Log("Redis:", s)
+			},
+		}
+		defer stderrLogger.Flush()
+		redisCmd.Stderr = stderrLogger
+		err = redisCmd.Run()
 		t.Log("Redis exited:", err)
-		t.Log("Redis Logs:\n" + string(output))
-	}()
+	}(redisCmd)
 
 	t.Log("redistest: Started Redis")
 
@@ -88,4 +104,27 @@ func (r *Redis) Close() {
 	r.cancel()
 	os.RemoveAll(r.tempDir)
 	r.wg.Wait()
+}
+
+type writeLogger struct {
+	buf  bytes.Buffer
+	line func(string)
+}
+
+func (w *writeLogger) Write(buf []byte) (n int, err error) {
+	w.buf.Write(buf)
+	ln, err := w.buf.ReadString('\n')
+	if err != nil {
+		return 0, err
+	}
+	w.line(ln[:len(ln)-1])
+	return len(buf), nil
+}
+
+func (w *writeLogger) Flush() {
+	buf := w.buf.String()
+	if len(buf) > 0 {
+		w.line(buf)
+	}
+	w.buf.Reset()
 }

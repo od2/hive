@@ -11,84 +11,116 @@ skinparam usecase {
 
 card Session {
   card H_Sess_Serial [
+    Session Serial Num
+    ---
     H: Worker
-    -> Sess Serial
+    -> Serial
   ]
   card H_Sess_Count [
+    Session Count
+    ---
     H: Worker
-    -> Sess Count
+    -> Count
   ]
   card Z_Sess_Exp [
+    Session Expiries
+    ---
     Z: (worker, sess)
-    by exp
+    by exp_time
   ]
 
   usecase Sess_Open <<Session>>
   usecase Sess_Close <<Session>>
   entity Sess_Exp <<Session>>
 
-  H_Sess_Serial -[#Navy]> Sess_Open: HINCRBY +1
+  H_Sess_Serial --[#Navy]> Sess_Open: HINCRBY +1
   H_Sess_Count <-[#Navy]- Sess_Open: HINCRBY +1
   Sess_Open -[#Navy]> Z_Sess_Exp: ZADD
-  Sess_Close --[#Navy]> Z_Sess_Exp: ZREM
-  Sess_Close --[#Navy]> H_Sess_Count: HINCRBY -1
-  Sess_Exp <-[#Navy]- Z_Sess_Exp: ZRANGEBYSCORE
+  Sess_Close -[#Navy]> Z_Sess_Exp: ZREM
+  H_Sess_Count <-[#Navy]- Sess_Close: HINCRBY -1
+  Sess_Exp <-[#Navy] Z_Sess_Exp: ZRANGEBYSCORE
   Sess_Close <-[#Navy]- Sess_Exp: call
 }
 
 card "Flow Control" {
   card H_Sess_Quota [
+    Session Quota
+    ---
     H: Sess
     -> Int
   ]
   card H_Worker_Quota [
+    Worker Quota
+    ---
     H: Worker
     -> Int
   ]
 
   usecase Sess_Want <<Flow>>
+
+  Sess_Want --[#Green]> H_Sess_Quota: HINCRBY n
+  Sess_Want -[#Green]> H_Worker_Quota: HINCRBY n
 }
 
-card "N-Assign" {
+card "N-Assign" as NAssign {
   card "Int: Progress" as INT_Progress
+  card H_Msg_Count [
+    Msg Completions
+    ---
+    H: Msg
+    -> Int
+  ]
   card Z_Worker_Offset [
+    Active Workers
+    ---
     Z: Worker
     by offset
   ]
+  card H_Worker_Offset [
+    Idle Workers
+    ---
+    H: Worker
+    -> Offset
+  ]
 
   entity Assign
+
+  Assign -> H_Msg_Count: HINCRBY
+  Z_Worker_Offset <--> Assign: ZPOPMIN\nZADD\nZREM
+  H_Worker_Offset <-- Assign: HSET\nHDEL
+  INT_Progress <-- Assign : SET
+
+  Z_Worker_Offset -[hidden]> H_Worker_Offset
+  H_Worker_Offset -[hidden]> INT_Progress
 }
 
-card Deliver {
-  card "X: Worker" as X_Worker
+card Delivery {
+  card "X: Worker_<ID>" as X_Worker
   card "X: Results" as X_Results
 
   usecase Sess_Read <<Deliver>>
   entity Task_Exp <<Deliver>>
   usecase Sess_Ack <<Deliver>>
+
+  Sess_Read <-[#DarkCyan]- X_Worker: XREADGROUP
+  X_Worker <-[#DarkCyan]> Task_Exp : XRANGE\nXDEL
+  Task_Exp -[#DarkCyan]-> X_Results: XADD
+  X_Worker <-[#DarkCyan] Sess_Ack: XACK\nXDEL
+  Sess_Ack -[#DarkCyan]> X_Results: XADD
+  Sess_Read -[hidden]-> Task_Exp
+  Task_Exp -[hidden]-> Sess_Ack
 }
 
 Z_Sess_Exp <-[#Green]- Sess_Want: HEXISTS
-Sess_Want --[#Green]> H_Sess_Quota: HINCRBY n
-Sess_Want -[#Green]> H_Worker_Quota: HINCRBY n
 
-Assign <-- Z_Worker_Offset: ZPOPMIN
-Assign --> Z_Worker_Offset: ZADD
-Assign --> X_Worker: XADD
+Assign --> X_Worker: XADD\nXGROUP
 H_Worker_Quota <- Assign: HINCRBY -1
-Assign -> INT_Progress: SET
-Z_Sess_Exp <-- Assign: ZADD
+Z_Sess_Exp <-- Sess_Read: ZADD
 
-X_Worker -[#DarkCyan]> Sess_Read: XREADGROUP
 H_Sess_Quota <-[#DarkCyan]- Sess_Read: HINCRBY -n
 
-X_Worker -[#DarkCyan]> Task_Exp : XRANGE\nXDEL
-Task_Exp -[#DarkCyan]-> X_Results: XADD
+Sess_Close -[#Navy]> Z_Worker_Offset: ZREM
 
-X_Worker <-[#DarkCyan] Sess_Ack: XACK\nXDEL
-Sess_Ack -[#DarkCyan]> X_Results: XADD
-
-Sess_Read -[hidden]-> Task_Exp
-Task_Exp -[hidden]-> Sess_Ack
+Sess_Close -[#Navy]> X_Worker: XRANGE\nDEL
 
 @enduml

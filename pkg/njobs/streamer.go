@@ -2,13 +2,13 @@ package njobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"time"
+	"os"
 
+	"github.com/go-redis/redis/v8"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/types"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // Streamer accepts connections from a worker and pushes down assignments.
@@ -42,13 +42,13 @@ func (s *Streamer) OpenAssignmentsStream(
 // StopWork halts the message stream making the worker shut down.
 func (s *Streamer) CloseAssignmentsStream(
 	ctx context.Context,
-	_ *types.CloseAssignmentsStreamRequest,
+	req *types.CloseAssignmentsStreamRequest,
 ) (*types.CloseAssignmentsStreamResponse, error) {
 	worker, err := auth.FromGRPCContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.EvalStopSession(ctx, worker.WorkerID); err != nil {
+	if err := s.EvalStopSession(ctx, worker.WorkerID, req.StreamId); err != nil {
 		return nil, err
 	}
 	return &types.CloseAssignmentsStreamResponse{}, nil
@@ -68,7 +68,8 @@ func (s *Streamer) WantAssignments(
 		return nil, fmt.Errorf("failed to run addSessionQuota: %w", err)
 	}
 	return &types.WantAssignmentsResponse{
-		Watermark: int32(newQuota),
+		Watermark:      int32(newQuota),
+		AddedWatermark: int32(newQuota), // TODO Check if that's the actual number added
 	}, nil
 }
 
@@ -78,20 +79,41 @@ func (s *Streamer) StreamAssignments(
 	outStream types.Assignments_StreamAssignmentsServer,
 ) error {
 	ctx := outStream.Context()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	worker, err := auth.FromGRPCContext(ctx)
 	if err != nil {
 		return err
 	}
-	refreshSessionTicker := time.NewTicker(s.SessionRefreshInterval)
+	// Check if stream ID exists.
+	_, zscoreErr := s.Redis.ZScore(ctx, s.PartitionKeys.SessionExpires,
+		redisSessionKey(worker.WorkerID, req.StreamId)).Result()
+	if errors.Is(zscoreErr, redis.Nil) {
+		return ErrSessionNotFound
+	} else if zscoreErr != nil {
+		return fmt.Errorf("failed to check if session exists: %w", zscoreErr)
+	}
+	// Create new Redis Streams consumer session.
+	assignmentsC := make(chan []*types.Assignment)
+	session := Session{
+		RedisClient: s.RedisClient,
+		Worker:      worker.WorkerID,
+		Session:     req.StreamId, // TODO check if stream ID exists
+	}
+	go func() {
+		defer cancel()
+		if err := session.Run(ctx, assignmentsC); err != nil {
+			// TODO Log error properly
+			fmt.Fprintln(os.Stderr, err)
+		}
+	}()
+	// Loop through Redis Streams results.
 	for {
-		// If context is done, exit.
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-refreshSessionTicker.C:
-			if err := s.RefreshSession(ctx, worker.WorkerID, req.StreamId); err == ErrSessionNotFound {
-				return status.Error(codes.NotFound, "session expired or not found")
-			} else if err != nil {
+		case batch := <-assignmentsC:
+			if err := outStream.Send(&types.AssignmentBatch{Assignments: batch}); err != nil {
 				return err
 			}
 		default:

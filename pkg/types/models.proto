@@ -50,7 +50,7 @@ service Assignments {
   rpc WantAssignments(WantAssignmentsRequest) returns (WantAssignmentsResponse) {}
 
   // StreamAssignments connects to the server-to-client assignment stream.
-  rpc StreamAssignments(StreamAssignmentsRequest) returns (stream Assignment) {}
+  rpc StreamAssignments(StreamAssignmentsRequest) returns (stream AssignmentBatch) {}
 }
 
 message OpenAssignmentsStreamRequest {}
@@ -82,6 +82,10 @@ message GetPendingAssignmentsCountRequest {
 
 message PendingAssignmentsCount {
   int32 watermark = 1; // N additional tasks for this stream
+}
+
+message AssignmentBatch {
+  repeated Assignment assignments = 1;
 }
 
 // Assignment instructs the client to fetch an item.

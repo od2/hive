@@ -75,22 +75,24 @@ type Options struct {
 	TaskTimeout        time.Duration // in-flight assignment TTL, i.e. time given to worker to complete each task
 	TaskExpireInterval time.Duration // max task expire interval (runs sooner by default)
 	TaskExpireBatch    uint          // max assignments to expire at once
+	DeliverBatch       uint          // max assignments in one gRPC server-side event
 }
 
-func DefaultOptions() Options {
-	return Options{
-		// NAssign algorithm
-		N:              3,
-		AssignInterval: 250 * time.Millisecond,
-		AssignBatch:    128,
-		// Session tracking
-		SessionTimeout:         5 * time.Minute,
-		SessionRefreshInterval: 3 * time.Second,
-		SessionExpireInterval:  10 * time.Second,
-		SessionExpireBatch:     16,
-		// Event streaming
-		TaskTimeout:        time.Minute,
-		TaskExpireInterval: 2 * time.Second,
-		TaskExpireBatch:    128,
-	}
+// DefaultOptions returns the default njobs options.
+// Only pass by value, not reference, to avoid modifying this globally.
+var DefaultOptions = Options{
+	// NAssign algorithm
+	N:              3,
+	AssignInterval: 250 * time.Millisecond,
+	AssignBatch:    128,
+	// Session tracking
+	SessionTimeout:         5 * time.Minute,
+	SessionRefreshInterval: 3 * time.Second,
+	SessionExpireInterval:  10 * time.Second,
+	SessionExpireBatch:     16,
+	// Event streaming
+	TaskTimeout:        time.Minute,
+	TaskExpireInterval: 2 * time.Second,
+	TaskExpireBatch:    128,
+	DeliverBatch:       16,
 }

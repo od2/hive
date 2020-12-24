@@ -12,6 +12,8 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
 	"go.od2.network/hive/pkg/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // TopicKeys specifies the Redis keys for topic-scoped information.
@@ -32,41 +34,48 @@ func topicKey(topic string, field int8) string {
 
 // PartitionKeys specifies the Redis keys for partition-scoped information.
 type PartitionKeys struct {
+	// Session
+	SessionSerial  string // Hash Map: worker => session serial number
+	SessionCount   string // Int64: Number of active sessions per worker
+	SessionExpires string // Sorted Set: {worker, session} by exp_time
+	// Flow control
+	WorkerQuota  string // Hash Map: Remaining message limit per worker
+	SessionQuota string // Hash Map: Remaining message limit per session
 	// NAssign algorithm
 	Progress      string // Int64: Kafka partition offset (global worker offset)
 	TaskAssigns   string // Hash Map: message => no. of assignments
 	ActiveWorkers string // Sorted Set: Active worker offsets
 	IdleWorkers   string // Hash Map: worker => {offset, mode}
-	// Session tracking
-	WorkerQuota    string // Hash Map: Remaining message limit per worker
-	SessionQuota   string // Hash Map: Remaining message limit per session
-	SessionSerial  string // Int64: Session serial number
-	SessionCounter string // Int64: Number of active sessions per worker
-	SessionExpires string // Sorted Set: {worker, session} by exp_time
-	// Event streaming
-	TaskExpires string // Sorted Set: {worker, offset} by exp_time
-	WorkerQueue string // Prefix for Stream: Worker queue {worker, offset, item}
-	Results     string // Stream: Worker results {worker, offset, item, ok}
+	// Delivery
+	WorkerQueuePrefix string // Prefix for Stream: Worker queue {worker, offset, item}
+	Results           string // Stream: Worker results {worker, offset, item, ok}
+}
+
+// WorkerQueue returns the specific worker queue based on WorkerQueuePrefix.
+func (p *PartitionKeys) WorkerQueue(worker int64) string {
+	var workerBytes [8]byte
+	binary.BigEndian.PutUint64(workerBytes[:], uint64(worker))
+	return p.WorkerQueuePrefix + string(workerBytes[:])
 }
 
 // NewPartitionKeys returns the default PartitionKeys for a given Kafka partition.
 func NewPartitionKeys(topic string, partition int32) PartitionKeys {
 	return PartitionKeys{
-		// NAssign algorithm
-		Progress:      partitionKey(topic, partition, 0x10),
-		TaskAssigns:   partitionKey(topic, partition, 0x11),
-		ActiveWorkers: partitionKey(topic, partition, 0x12),
-		IdleWorkers:   partitionKey(topic, partition, 0x13),
-		// Session tracking
-		WorkerQuota:    partitionKey(topic, partition, 0x20),
-		SessionQuota:   partitionKey(topic, partition, 0x21),
-		SessionSerial:  partitionKey(topic, partition, 0x22),
-		SessionCounter: partitionKey(topic, partition, 0x23),
-		SessionExpires: partitionKey(topic, partition, 0x24),
-		// Event streaming
-		TaskExpires: partitionKey(topic, partition, 0x30),
-		WorkerQueue: partitionKey(topic, partition, 0x31),
-		Results:     partitionKey(topic, partition, 0x32),
+		// Session
+		SessionSerial:  partitionKey(topic, partition, 0x10),
+		SessionCount:   partitionKey(topic, partition, 0x11),
+		SessionExpires: partitionKey(topic, partition, 0x12),
+		// Flow control
+		WorkerQuota:  partitionKey(topic, partition, 0x20),
+		SessionQuota: partitionKey(topic, partition, 0x21),
+		// N-Assign
+		Progress:      partitionKey(topic, partition, 0x30),
+		TaskAssigns:   partitionKey(topic, partition, 0x31),
+		ActiveWorkers: partitionKey(topic, partition, 0x32),
+		IdleWorkers:   partitionKey(topic, partition, 0x33),
+		// Delivery
+		WorkerQueuePrefix: partitionKey(topic, partition, 0x40),
+		Results:           partitionKey(topic, partition, 0x41),
 	}
 }
 
@@ -101,6 +110,7 @@ type Scripts struct {
 	startSession    *redis.Script
 	stopSession     *redis.Script
 	addSessionQuota *redis.Script
+	commitRead      *redis.Script
 }
 
 // LoadScripts hashes the Lua server-side scripts and pre-loads them into Redis.
@@ -132,124 +142,144 @@ func LoadScripts(ctx context.Context, r *redis.Client) (*Scripts, error) {
 	if err := s.addSessionQuota.Load(ctx, r).Err(); err != nil {
 		return nil, err
 	}
+	s.commitRead = redis.NewScript(commitReadScript)
+	if err := s.commitRead.Load(ctx, r).Err(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
-// startSessionScript sets the state of a worker to active.
+// startSessionScript creates a new worker session.
 // Keys:
-// 1. Hash Map inactive workers
-// 2. Sorted Set active worker offsets
-// 3. Hash Map sessions serial
-// 4. Hash Map sessions counter
-// 5. Sorted Set session expires
+// 1. Hash Map sessions serial
+// 2. Hash Map sessions counter
+// 3. Sorted Set session expires
 // Arguments:
 // 1. Worker ID
 // 2. Session expire time
 // Returns: Session ID
 const startSessionScript = `
 -- Keys
-local key_idle_workers = KEYS[1]
-local key_active_workers = KEYS[2]
-local key_session_serial = KEYS[3]
-local key_session_counter = KEYS[4]
-local key_session_expires = KEYS[5]
+local key_session_serial = KEYS[1]
+local key_session_count = KEYS[2]
+local key_session_expires = KEYS[3]
 
 -- Arguments
 local worker = ARGV[1]
 local expire_time = ARGV[2]
+local stream_prefix = ARGV[3]
 
 -- Create session.
-local session_id = redis.call("HINCRBY", key_session_serial, 1)
-redis.call("HINCRBY", key_session_counter, 1)
-redis.call("ZADD", key_session_expires, struct.pack("ll", worker, session_id))
--- Unpause worker if exists.
-if redis.call("ZSCORE", key_active_workers, worker) ~= nil then
-  return
+local session_id = redis.call("HINCRBY", key_session_serial, worker, 1)
+local session_count = redis.call("HINCRBY", key_session_count, worker, 1)
+if session_count == 1 then
+  -- First session has to allocate worker queue.
+  local worker_stream_key = stream_prefix .. struct.pack(">l", worker)
+  redis.call("XGROUP", "CREATE", worker_stream_key, "main", 0, "MKSTREAM")
 end
-local inactive_worker = redis.call("HGET", key_idle_workers, worker)
-local offset = 0
-local stopped = 1
-if not inactive_worker then
-  offset, stopped = struct.unpack("lB", inactive_worker)
-end
-if stopped == 1 then
-  redis.call("HDEL", key_idle_workers, ARGV[1])
-  redis.call("ZADD", key_active_workers, offset, ARGV[1])
-end
+redis.call("ZADD", key_session_expires, expire_time, struct.pack(">ll", worker, session_id))
 return session_id
 `
 
 // EvalStartSession moves a worker to the active set, giving it tasks.
 func (r *RedisClient) EvalStartSession(ctx context.Context, worker int64) (sessionID int64, err error) {
 	keys := []string{
-		r.PartitionKeys.IdleWorkers,
-		r.PartitionKeys.ActiveWorkers,
+		r.PartitionKeys.SessionSerial,
+		r.PartitionKeys.SessionCount,
+		r.PartitionKeys.SessionExpires,
 	}
-	return r.startSession.Run(ctx, r.Redis, keys, worker).Int64()
+	unixNow := time.Now().Unix()
+	sessionExp := unixNow + int64(r.Options.SessionTimeout.Seconds())
+	return r.startSession.Run(ctx, r.Redis, keys, worker, sessionExp, r.PartitionKeys.WorkerQueuePrefix).Int64()
 }
 
 const stopSessionScript = `
 -- Keys
-local key_idle_workers = KEYS[1]
-local key_active_workers = KEYS[2]
-local key_session_counter = KEYS[3]
-local key_session_expires = KEYS[4]
-local key_inflight = KEYS[5]
-local key_expiry = KEYS[6]
+local key_active_workers = KEYS[1]
+local key_session_count = KEYS[2]
+local key_session_expires = KEYS[3]
+local key_session_quota = KEYS[4]
+local key_worker_quota = KEYS[5]
+local key_worker_stream = KEYS[6]
+local key_results = KEYS[7]
 
 -- Arguments
-local worker = ARGV[1]
-local stream_prefix = ARGV[2]
+local worker = tonumber(ARGV[1])
+local session = tonumber(ARGV[2])
 
 -- Delete session.
-local num_sessions = redis.call("HINCRBY", key_session_counter, -1)
-if num_sessions > 0 then
-  return
+local worker_key = struct.pack(">l", worker)
+local session_key = struct.pack(">ll", worker, session)
+local num_sessions = redis.call("HINCRBY", key_session_count, session_key, -1)
+redis.call("ZREM", key_session_expires, session_key)
+redis.call("HDEL", key_session_quota, session_key)
+if num_sessions <= 0 then
+  -- All sessions are gone, terminate worker and dead-letter.
+  redis.call("ZREM", key_active_workers, worker_key)
+  local msgs = redis.call("XRANGE", key_worker_stream, "-", "+")
+  for i,msg in ipairs(msgs) do
+    redis.call("XADD", key_results, "*",
+      "worker", worker,
+      "ok", 0,
+      unpack(msg[2]))
+  end
+  redis.call("HDEL", key_worker_quota, worker_key)
+  redis.call("DEL", key_worker_stream)
 end
--- All sessions are gone.
-local offset = redis.call("ZSCORE", key_active_workers, worker)
-redis.call("ZREM", key_session_expires, struct.pack("ll", worker, session_id))
-redis.call("HSET", key_idle_workers, struct.unpack("lB", offset, true))
-local key_stream = stream_prefix .. tostring(worker)
-redis.call("DEL", key_stream)
--- Get all in-flight messages.
-local inflight_start = "[" .. struct.pack("ll", worker, 0)
-local inflight_stop  = "(" .. struct.pack("ll", worker+1, 0)
-local dropped = redis.call("ZRANGEBYLEX", key_inflight, inflight_start, inflight_stop)
-redis.call("ZREMRANGEBYLEX", key_inflight, inflight_start, inflight_stop)
-redis.call("ZREM", key_expiry, dropped)
 `
 
 // EvalStopSession moves a worker to the stopped set, removing all tasks.
-func (r *RedisClient) EvalStopSession(ctx context.Context, worker int64) error {
+func (r *RedisClient) EvalStopSession(ctx context.Context, worker int64, session int64) error {
 	keys := []string{
-		r.PartitionKeys.IdleWorkers,
 		r.PartitionKeys.ActiveWorkers,
+		r.PartitionKeys.SessionCount,
+		r.PartitionKeys.SessionExpires,
+		r.PartitionKeys.SessionQuota,
+		r.PartitionKeys.WorkerQuota,
+		r.PartitionKeys.WorkerQueue(worker),
+		r.PartitionKeys.Results,
 	}
-	return r.stopSession.Run(ctx, r.Redis, keys, worker).Err()
+	err := r.stopSession.Run(ctx, r.Redis, keys, worker, session).Err()
+	if errors.Is(err, redis.Nil) {
+		return nil
+	}
+	return err
 }
 
 // ErrSessionNotFound is thrown when trying to access a non-existent session.
 // This usually happens when trying to refresh an expired session.
-var ErrSessionNotFound = errors.New("session not found")
+var ErrSessionNotFound = status.Error(codes.NotFound, "session not found")
 
 const addSessionQuotaScript = `
 -- Keys
 local key_worker_quota = KEYS[1]
 local key_session_quota = KEYS[2]
+local key_session_expire = KEYS[3]
+local key_idle_workers = KEYS[4]
+local key_active_workers = KEYS[5]
 -- Arguments
 local worker = ARGV[1]
 local session = ARGV[2]
 local quota = ARGV[3]
 
 -- TODO Implement worker quota cap.
-local worker_key = struct.pack("l", worker)
-local session_key = struct.pack("ll", worker, session)
-if redis.call("HEXISTS", key_session_quota, session_key) ~= 1 then
+local worker_key = struct.pack(">l", worker)
+local session_key = struct.pack(">ll", worker, session)
+if redis.call("ZSCORE", key_session_expire, struct.pack(">ll", worker, session)) == nil then
   return nil
 end
 redis.call("HINCRBY", key_worker_quota, worker_key, quota)
-return redis.call("HINCRBY", key_session_quota, session_key, quota)
+local added = redis.call("HINCRBY", key_session_quota, session_key, quota)
+-- Make worker active.
+local offset_bin = redis.call("HGET", key_idle_workers, worker_key)
+local offset
+if offset_bin then
+  offset = struct.unpack(">l", offset_bin)
+else
+  offset = 0
+end
+redis.call("ZADD", key_active_workers, offset, worker_key)
+return added
 `
 
 // AddSessionQuota adds more quota to a session.
@@ -258,19 +288,20 @@ func (r *RedisClient) AddSessionQuota(
 	worker int64, session int64,
 	n int64,
 ) (newQuota int64, err error) {
-	keys := []string{r.PartitionKeys.WorkerQuota, r.PartitionKeys.SessionQuota}
-	res, err := r.addSessionQuota.Run(ctx, r.Redis, keys, worker, session, n).Result()
-	if err != nil {
+	keys := []string{
+		r.PartitionKeys.WorkerQuota,
+		r.PartitionKeys.SessionQuota,
+		r.PartitionKeys.SessionExpires,
+		r.PartitionKeys.IdleWorkers,
+		r.PartitionKeys.ActiveWorkers,
+	}
+	res, err := r.addSessionQuota.Run(ctx, r.Redis, keys, worker, session, n).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, ErrSessionNotFound
+	} else if err != nil {
 		return 0, fmt.Errorf("failed to run addSessionQuota: %w", err)
 	}
-	switch a := res.(type) {
-	case nil:
-		return 0, ErrSessionNotFound
-	case int64:
-		return a, nil
-	default:
-		return 0, fmt.Errorf("unexpected res: %T", res)
-	}
+	return res, nil
 }
 
 // RefreshSession resets the TTL of a session.
@@ -316,26 +347,20 @@ local key_progress = KEYS[1]
 local key_message_tries = KEYS[2]
 local key_active_workers = KEYS[3]
 local key_idle_workers = KEYS[4]
-local key_expiry = KEYS[5]
-local key_worker_quota = KEYS[6]
+local key_worker_quota = KEYS[5]
 -- Arguments
 local replicas = ARGV[1]
-local batch = ARGV[2]
-local exp_time = ARGV[3]
-local stream_prefix = ARGV[4]
-
-local function key_stream (worker)
-  return stream_prefix .. tostring(worker)
-end
+local exp_time = ARGV[2]
+local stream_prefix = ARGV[3]
 
 -- Loop through messages
 local progress = redis.call("GET", key_progress) or 0
-for i=1,#batch,2 do
-  local offset = batch[i]
-  local item = batch[i+1]
-  if offset <= progress then
+for i=4,#ARGV,2 do
+  local offset = tonumber(ARGV[i])
+  local item = ARGV[i+1]
+  if offset < progress then
     -- Kafka consumer is behind Redis state.
-    return {min_offset, "ERR_SEEK"}
+    return {progress, "ERR_SEEK"}
   end
   -- Assign each message N times
   local tries = redis.call("HINCRBY", key_message_tries, offset, 1)
@@ -343,22 +368,21 @@ for i=1,#batch,2 do
     -- Assign task to worker with lowest progress, and update progress.
     local worker_p = redis.call("ZPOPMIN", key_active_workers)
     if #worker_p == 0 then
-      return {min_offset, "ERR_NO_WORKERS"}
+      return {progress, "ERR_NO_WORKERS"}
     end
-    local worker = worker_p[1]
-    redis.call("ZADD", key_active_workers, offset, worker)
-    -- Register task in task set and expiration queue.
-    local entry = struct.pack("ll", worker, offset)
-    redis.call("ZADD", key_expiry, exp_time, entry)
-    redis.call("XADD", key_stream(worker), tostring(offset) .. "-0",
+    local worker_key = worker_p[1]
+    local worker = struct.unpack(">l", worker_key)
+    redis.call("ZADD", key_active_workers, offset, worker_key)
+	redis.call("HSET", key_idle_workers, worker_key, offset)
+    -- Push task to worker queue.
+    local entry = struct.pack(">ll", worker, offset)
+    local worker_stream_key = stream_prefix .. worker_key
+    redis.call("XADD", worker_stream_key, tostring(offset) .. "-1",
       "exp_time", exp_time, "item", item)
-    -- Pause worker if its queue is saturated.
-    local worker_quota_key = struct.pack("l", worker)
-    local worker_quota = redis.call("HINCRBY", key_worker_quota, worker_quota_key, -1)
+    -- Consume worker quota, and pause worker if out of quota.
+    local worker_quota = redis.call("HINCRBY", key_worker_quota, worker_key, -1)
     if worker_quota <= 0 then
-      redis.call("ZREM", key_active_workers, worker)
-      redis.call("HSET", key_idle_workers, workers, struct.pack("lB", offset, false))
-      redis.call("HDEL", key_worker_quota, worker_quota_key)
+      redis.call("ZREM", key_active_workers, worker_key)
     end
   end
   -- Move forward progress.
@@ -366,7 +390,7 @@ for i=1,#batch,2 do
   redis.call("HDEL", key_message_tries, offset)
   redis.call("SET", key_progress, offset)
 end
-return {offset, "OK"}
+return {progress, "OK"}
 `
 
 // Assignment marks an incoming Kafka message matched to a worker.
@@ -390,20 +414,23 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 		r.PartitionKeys.TaskAssigns,
 		r.PartitionKeys.ActiveWorkers,
 		r.PartitionKeys.IdleWorkers,
-		r.PartitionKeys.TaskExpires,
+		r.PartitionKeys.WorkerQuota,
 	}
-	tasks := make([]interface{}, len(batch))
+	argv := make([]interface{}, 3+len(batch)*2)
+	argv[0] = int64(r.N)
+	argv[1] = expireAt
+	argv[2] = r.PartitionKeys.WorkerQueuePrefix
 	offsetsMap := make(map[int64]*sarama.ConsumerMessage)
 	for i, msg := range batch {
-		tasks[i*2] = msg.Offset
+		argv[3+i*2] = msg.Offset
 		// Decode Kafka key as big endian int64 item ID.
 		if len(msg.Key) != 8 {
 			return 0, fmt.Errorf("invalid Kafka key: %x", msg.Key)
 		}
-		tasks[(i*2)+1] = int64(binary.BigEndian.Uint64(msg.Key))
+		argv[3+(i*2)+1] = int64(binary.BigEndian.Uint64(msg.Key))
 		offsetsMap[msg.Offset] = msg
 	}
-	cmd := r.assignTasks.Run(ctx, r.Redis, keys, int64(r.N), tasks, expireAt)
+	cmd := r.assignTasks.Run(ctx, r.Redis, keys, argv...)
 	res, err := cmd.Result()
 	if err != nil {
 		return 0, err
@@ -437,56 +464,49 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 	return newOffset, retErr
 }
 
-// expireTasksScript removes expired in-flight assignments.
+// expireTasksScript removes expired in-flight assignments for a worker stream.
 // Keys:
-// 1. Sorted Set expiration queue
+// 1. Stream worker
 // 2. Stream results
 // Arguments:
 // 1. Current unix time
-// 2. Max no. of items to expire this invocation
-// 3. Prefix for Stream worker assignments
+// 2. Worker ID
 // Returns next expiration time
 const expireTasksScript = `
 -- Keys
-local key_expiry = KEYS[1]
+local key_worker_stream = KEYS[1]
 local key_results = KEYS[2]
 -- Arguments
-local time = ARGV[1]
-local limit = ARGV[2]
-local stream_prefix = ARGV[3]
+local unix_time = tonumber(ARGV[1])
+local worker = tonumber(ARGV[2])
+local batch = tonumber(ARGV[3])
 
-local key_stream = stream_prefix .. tostring(worker)
-local function find_item (kvps)
+local function parse_kvps (kvps)
+  local res = {}
   for i=1,#kvps,2 do
-    if kvps[i] == "item" then
-      return kvps[i+1]
+    res[kvps[i]] = kvps[i+1]
+  end
+  return res
+end
+
+-- Loop through all expired items on the stream 
+while true do
+  local msgs = redis.call("XRANGE", key_worker_stream, "-", "+", "COUNT", batch)
+  for i,msg in ipairs(msgs) do
+    local kvps = parse_kvps(msg[2])
+    local exp_time = tonumber(kvps["exp_time"])
+    if exp_time < unix_time then
+      redis.call("XADD", key_results, "*",
+        "worker", worker,
+        "ok", 0,
+        unpack(msg[2]))
+      redis.call("XDEL", key_worker_stream, msg[1])
+    else
+      return exp_time
     end
   end
-  error("no item field on stream item")
 end
-
--- Pop expired items
-local expired = redis.call("ZRANGEBYSCORE", key_expiry, "-inf", time-1, "LIMIT", 0, limit)
-redis.call("ZREM", key_inflight, expired)
-for expire in expired do
-  -- Read key from expire priority queue.
-  local worker, offset = struct.unpack("ll", expire)
-  -- Pop details from task queue.
-  local stream_id = tostring(offset) .. "-0"
-  local xrange = redis.call("XRANGE", key_stream, "[" .. stream_id, "(" .. stream_id, "COUNT", 1)
-  local item = find_item(xrange[1][2])
-  redis.call("XDEL", key_stream, stream_id)
-  -- Republish on results queue.
-  redis.call("XADD", key_results, "*",
-    "worker", worker, "offset", offset, "item", item, "ok", false)
-end
--- Get time of next expiry
-local next_expiry_entry = redis.call("ZRANGE", key_expire, 0, 0, "WITHSCORES")
-local next_expiry = 0
-if next_expiry_entry then
-  next_expiry = next_expiry_entry[2]
-end
-return next_expiry
+return 0
 `
 
 // Expiration marks a worker task assignment as expired.
@@ -496,51 +516,34 @@ type Expiration struct {
 	ItemID int64
 }
 
-// evalExpire pops expired items and time to wait until next expiry.
-// It processes at most "limit" messages at once.
-// The "time to wait" is set to -1 when there are no more items.
-func (r *RedisClient) evalExpire(ctx context.Context, limit uint) (time.Duration, error) {
+// evalExpire pops expired items form a worker stream.
+// It returns the timestamp when the next expiry happens, or 0 if unknown.
+func (r *RedisClient) evalExpire(ctx context.Context, worker int64, batch uint) (int64, error) {
+	keys := []string{
+		r.PartitionKeys.WorkerQueue(worker),
+		r.PartitionKeys.Results,
+	}
 	nowUnix := time.Now().Unix()
-	keys := []string{r.PartitionKeys.TaskExpires, r.PartitionKeys.Results}
-	res, err := r.expireTasks.Run(ctx, r.Redis, keys,
-		nowUnix, int64(limit), r.PartitionKeys.WorkerQueue).Result()
-	if err != nil {
-		return 0, err
-	}
-	nextExpiry, ok := res.(int64)
-	if !ok {
-		return 0, fmt.Errorf("unexpected res type: %T", res)
-	}
-	var waitTime time.Duration
-	if nextExpiry == 0 {
-		waitTime = -1
-	} else if nextExpiry <= nowUnix {
-		waitTime = 0
-	} else {
-		waitTime = time.Duration(nextExpiry-nowUnix) * time.Second
-	}
-	return waitTime, nil
+	return r.expireTasks.Run(ctx, r.Redis, keys, nowUnix, worker, int64(batch)).Int64()
 }
 
-// ackScript removes acknowledged task assignments for a worker.
+// ackScript removes acknowledged task assignments for a worker stream.
 // Keys:
-// 1. Sorted Set expiration queue
+// 1. Stream worker
 // 2. Stream results
 // Arguments:
 // 1. Worker ID
-// 2. List of Kafka message offsets to remove
-// 3. Prefix for Stream worker assignments
+// 2. Stream ID
+// 3. List of Kafka message offsets to remove
 // Returns: Number of removed assignments
 const ackScript = `
 -- Keys
-local key_expiry = KEYS[1]
+local key_worker_stream = KEYS[1]
 local key_results = KEYS[2]
 -- Arguments
 local worker = ARGV[1]
-local offsets = ARGV[2]
-local stream_prefix = ARGV[3]
-
-local key_stream = stream_prefix .. tostring(worker)
+local stream = ARGV[2]
+local offsets = ARGV[3]
 
 -- Helper function to find the "item" key-value pair on a Redis streams item.
 local function find_item (kvps)
@@ -555,42 +558,82 @@ end
 local count = 0
 for offset in offsets do
   -- Pop details from task queue.
-  local stream_id = tostring(offset) .. "-0"
-  local xrange = redis.call("XRANGE", key_stream, "[" .. stream_id, "(" .. stream_id, "COUNT", 1)
-  local item = find_item(xrange[1][2])
-  redis.call("XDEL", key_stream, stream_id)
-  -- Remove key from expire priority queue.
-  redis.call("ZREM", key_expiry, struct.pack("ll", worker, offset))
-  count = count + deleted
-  -- Republish on results queue.
-  redis.call("XADD", key_results, "*",
-    "worker", worker, "offset", offset, "item", item, "ok", true)
+  local msg_id = tostring(offset) .. "-0"
+  local xrange = redis.call("XRANGE", key_stream, "[" .. msg_id, "(" .. msg_id, "COUNT", 1)
+  if #xrange >= 1 then
+    local item = find_item(xrange[1][2])
+    -- Remove key from stream.
+    local deleted = redis.call("XDEL", key_stream, msg_id)
+    count = count + deleted
+    -- Republish on results queue.
+    redis.call("XADD", key_results, "*",
+      "worker", worker, "offset", offset, "item", item, "ok", 1)
+  end
 end
 return count
 `
 
 // EvalAck acknowledges a bunch of in-flight Kafka messages by their offsets for a worker.
-func (r *RedisClient) EvalAck(ctx context.Context, worker int64, offsets []int64) (uint, error) {
-	keys := []string{r.PartitionKeys.TaskExpires, r.PartitionKeys.Results}
-	count, err := r.ack.Run(ctx, r.Redis, keys, worker, offsets, r.PartitionKeys.WorkerQueue).Int64()
+func (r *RedisClient) EvalAck(ctx context.Context, worker int64, session int64, offsets []int64) (uint, error) {
+	keys := []string{
+		r.PartitionKeys.WorkerQueue(worker),
+		r.PartitionKeys.Results,
+	}
+	count, err := r.ack.Run(ctx, r.Redis, keys, worker, session, offsets).Int64()
 	return uint(count), err
+}
+
+const commitReadScript = `
+-- Keys
+local key_session_expires = KEYS[1]
+local key_session_quota = KEYS[2]
+-- Arguments
+local worker = ARGV[1]
+local session = ARGV[2]
+local num_msgs = ARGV[3]
+local exp_time = ARGV[4]
+
+local session_key = struct.pack(">ll", worker, session)
+redis.call("ZADD", key_session_expires, exp_time, session_key)
+local new_msgs = redis.call("HINCRBY", key_session_quota, session_key, -num_msgs)
+if new_msgs <= 0 then
+  redis.call("HDEL", key_session_quota, session_key)
+end
+`
+
+// EvalCommitRead commits the results of a Redis worker session stream read.
+// This should always run after XREADGROUP for a client.
+func (r *RedisClient) EvalCommitRead(ctx context.Context, worker int64, session int64, numMsgs int64, expTime int64) error {
+	keys := []string{
+		r.PartitionKeys.SessionExpires,
+		r.PartitionKeys.SessionQuota,
+	}
+	err := r.commitRead.Run(ctx, r.Redis, keys, worker, session, numMsgs, expTime).Err()
+	if errors.Is(err, redis.Nil) {
+		return nil
+	}
+	return err
 }
 
 // Session interfaces with a worker session.
 type Session struct {
 	*RedisClient
-	Worker  int64
-	Session int64
+	Worker     int64
+	Session    int64
+	nextExpire int64
 }
 
 // Run starts a blocking loop that sends all session messages to a Go channel.
 // While it's running the session is kept alive by refreshing it in the background.
 // This method does not close the channel after returning.
 func (s *Session) Run(ctx context.Context, assignmentsC chan<- []*types.Assignment) error {
-	for {
+	for ctx.Err() == nil {
 		assignments, err := s.step(ctx)
 		if err != nil {
 			return err
+		}
+		if len(assignments) == 0 {
+			continue
 		}
 		select {
 		case <-ctx.Done():
@@ -599,21 +642,32 @@ func (s *Session) Run(ctx context.Context, assignmentsC chan<- []*types.Assignme
 			break // continue
 		}
 	}
+	return ctx.Err()
 }
 
 func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
-	// Read message batch from Redis group.
-	streams, err := s.Redis.XReadGroup(ctx, &redis.XReadGroupArgs{
-		Group:    "",
-		Consumer: "",
-		Streams:  []string{},
-		Count:    4,
+	// Blocking read message batch from Redis group.
+	streams, readGroupErr := s.Redis.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    "main",
+		Consumer: strconv.FormatInt(s.Session, 10),
+		Streams:  []string{s.PartitionKeys.WorkerQueue(s.Worker), ">"},
+		Count:    int64(s.Options.DeliverBatch),
 		Block:    250 * time.Millisecond,
 		NoAck:    false,
 	}).Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from group: %w", err)
+	var redisReadGroupErr redis.Error
+	switch {
+	case errors.As(readGroupErr, &redisReadGroupErr):
+		if strings.HasPrefix(redisReadGroupErr.Error(), "NOGROUP ") {
+			return nil, nil // group does not yet exist, thus no assignments
+		}
+		fallthrough
+	case errors.Is(readGroupErr, redis.Nil):
+		return nil, nil // no items available
+	case readGroupErr != nil:
+		return nil, fmt.Errorf("failed to read from group: %w", readGroupErr)
 	}
+	// Parse message batch.
 	if len(streams) == 0 {
 		return nil, nil
 	} else if len(streams) != 1 {
@@ -642,4 +696,38 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 			KafkaOffset:    offset,
 		}
 	}
+	// Commit read.
+	unixTime := time.Now().Unix()
+	if len(assignments) > 0 {
+		sessionExpTime := unixTime + int64(s.Options.SessionTimeout.Seconds())
+		if err := s.EvalCommitRead(ctx, s.Worker, s.Session, int64(len(assignments)), sessionExpTime); err != nil {
+			return nil, fmt.Errorf("failed to commit read: %w", err)
+		}
+	}
+	// Check for expirations.
+	if s.nextExpire <= unixTime {
+		var expErr error
+		s.nextExpire, expErr = s.evalExpire(ctx, s.Worker, s.Options.TaskExpireBatch)
+		if expErr != nil {
+			return nil, fmt.Errorf("failed to expire tasks: %w", expErr)
+		}
+		if s.nextExpire == 0 {
+			// FIXME When there's nothing in the queue, wait for worker timeout
+			s.nextExpire = unixTime + 3
+		}
+	}
+	return assignments, nil
+}
+
+func redisWorkerKey(workerID int64) string {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], uint64(workerID))
+	return string(buf[:])
+}
+
+func redisSessionKey(workerID int64, sessionID int64) string {
+	var buf [16]byte
+	binary.BigEndian.PutUint64(buf[:8], uint64(workerID))
+	binary.BigEndian.PutUint64(buf[8:], uint64(sessionID))
+	return string(buf[:])
 }
