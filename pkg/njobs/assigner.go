@@ -20,16 +20,8 @@ import (
 //
 // It also runs a Watchdog background routine.
 type Assigner struct {
-	Redis       *redis.Client
-	Options     *Options
-	Assignments chan<- []Assignment
-	Expirations chan<- []Expiration
-}
-
-// Close closes outgoing message channel.
-// Attempting to continue consumption results in panic.
-func (a *Assigner) Close() {
-	close(a.Assignments)
+	Redis   *redis.Client
+	Options *Options
 }
 
 // Setup checks Redis connectivity.
@@ -62,7 +54,6 @@ func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 	watchdog := Watchdog{
 		RedisClient: r,
 		Options:     a.Options,
-		Expirations: a.Expirations,
 	}
 	watchdogErrC := make(chan error, 1)
 	var wg sync.WaitGroup
@@ -81,7 +72,7 @@ func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 	s := assignerState{
 		Assigner: a,
 		session:  session,
-		r: r,
+		r:        r,
 	}
 	// Start consumer loop.
 loop:
@@ -114,8 +105,8 @@ type assignerState struct {
 	*Assigner
 	session sarama.ConsumerGroupSession
 	claim   sarama.ConsumerGroupClaim
-	r      *RedisClient
-	window []*sarama.ConsumerMessage // unacknowledged messages
+	r       *RedisClient
+	window  []*sarama.ConsumerMessage // unacknowledged messages
 }
 
 // flush loops doing flush attempts until all messages are assigned.
@@ -146,7 +137,7 @@ func (s *assignerState) backOff(ctx context.Context) error {
 }
 
 func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
-	lastOffset, assignments, assignErr := s.r.evalAssignTasks(ctx, s.window)
+	lastOffset, assignErr := s.r.evalAssignTasks(ctx, s.window)
 	if assignErr == ErrSeek {
 		// Redis is ahead of Kafka.
 		// This is weird, since we would expect Kafka to be more durable than Redis.
@@ -169,7 +160,6 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 	for len(s.window) > 0 && s.window[0].Offset <= lastOffset {
 		s.window = s.window[1:]
 	}
-	s.Assignments <- assignments
 	// Commit offset to Kafka.
 	s.session.MarkOffset(s.claim.Topic(), s.claim.Partition(), lastOffset+1, "")
 	s.session.Commit()

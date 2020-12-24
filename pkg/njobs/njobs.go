@@ -1,23 +1,38 @@
 // Package njobs forms a job queue for distributing tasks among a lot of workers.
 //
-// It works on messages from Kafka and stores metadata for each partition in Redis.
+// It reads messages from Kafka, runs them through the N-Assign algorithm, and streams assignments to the workers.
 //
-// Tasks can be configured to be processed by N distinct workers.
-// The queue is somewhat hardened against algorithmic complexity attacks.
+// N-Assign
 //
-// Usage
+// N-Assign ensures that each task is processed by N distinct workers, via N task assignments.
+// The algorithm is somewhat hardened against complexity attacks.
 //
-// The queue needs a few background workers to operate (mainly to evict old entries).
-// The in-memory queue is typically filled from Kafka and indirectly exposed to workers through an API.
+// There is server-side flow control to prevent workers from getting too much tasks assigned,
+// as well as client-side flow control so workers can choose a task rate at which they are comfortable with.
+//
+// Sessions
 //
 // Workers will establish one or more worker sessions to read jobs and commit them.
-// Each worker session, so it is limited by the throughput of a single partition.
+// Each worker session has an assignment limit that gets decremented each time the server sends an assignment.
+// Once it reaches zero, the server stops sending.
+// Workers will negotiate with the server how much to increment the task limit asynchronously.
+// The sum of all session task limits will not exceed the predefined worker assignment allowance.
+//
+// Sessions shut down automatically after they have been idle for a while,
+// or when the client closes the session explicitly.
+//
+// TODO Allow binding worker sessions to multiple partitions.
+//
+// Input Queue
 //
 // The Kafka keys of messages must be binary big-endian encodings of the int64 item ID.
 //
 // You must ensure that worker IDs, Kafka offsets, unix epochs and item IDs
 // do not exceed 2^53 because of limitations in Lua 5.1.
 // Newer versions of Lua do not have this problem, but unfortunately Redis chose to not upgrade.
+//
+// The queue needs a few background workers to operate (mainly to evict old entries).
+// The in-memory queue is typically filled from Kafka and indirectly exposed to workers through an API.
 //
 // All exported components are thread-safe internally and ready for cross-component concurrency.
 // e.g. When doing a Kubernetes rolling upgrade it's fine to have more than one routine access the same resources.
@@ -39,20 +54,43 @@
 //
 // The components in this package rely on Kafka and Redis to store state and hold small amounts of dirty cache.
 // Data loss in Kafka or Redis results in old tasks being processed more than once.
-// Per design, it is not possible to skip tasks.
+//
+// All data traveling between nqueue components (Kafka, Redis, Go connectors) is covered by at-least-once semantics.
 package njobs
 
 import "time"
 
 // Options stores global settings.
-//
-// TODO WorkerQoS should be dynamic per worker
 type Options struct {
-	N              uint          // assignments per task
-	TaskTimeout    time.Duration // in-flight assignment TTL, i.e. time given to worker to complete each task
-	WorkerQoS      uint          // max in-flight tasks per worker
+	// NAssign algorithm
+	N              uint          // assignments per task´
 	AssignInterval time.Duration // assign/flush interval
 	AssignBatch    uint          // size of message to distribute to workers
-	ExpireInterval time.Duration // max expire interval (runs sooner by default)
-	ExpireBatch    uint          // max assignments to expire at once
+	// Session tracking
+	SessionTimeout         time.Duration // session TTL, i.e. time until a session without heart beats gets dropped
+	SessionRefreshInterval time.Duration // refresh session interval
+	SessionExpireInterval  time.Duration // max session expire interval
+	SessionExpireBatch     uint          // max sessions to expire at once
+	// Event streaming
+	TaskTimeout        time.Duration // in-flight assignment TTL, i.e. time given to worker to complete each task
+	TaskExpireInterval time.Duration // max task expire interval (runs sooner by default)
+	TaskExpireBatch    uint          // max assignments to expire at once
+}
+
+func DefaultOptions() Options {
+	return Options{
+		// NAssign algorithm
+		N:              3,
+		AssignInterval: 250 * time.Millisecond,
+		AssignBatch:    128,
+		// Session tracking
+		SessionTimeout:         5 * time.Minute,
+		SessionRefreshInterval: 3 * time.Second,
+		SessionExpireInterval:  10 * time.Second,
+		SessionExpireBatch:     16,
+		// Event streaming
+		TaskTimeout:        time.Minute,
+		TaskExpireInterval: 2 * time.Second,
+		TaskExpireBatch:    128,
+	}
 }

@@ -35,25 +35,56 @@ message TaskResult {
 
 // Assignments streams task assignments to workers.
 service Assignments {
-  // StartWork marks the worker as activated allocates a channel for assignment streams.
-  rpc StartWork(StartWorkRequest) returns (StartWorkResponse) {}
-  // StopWork marks the worker to be stopped.
-  // The pipeline actually stops when all items have been consumed or rejected.
-  rpc StopWork(StopWorkRequest) returns (StopWorkResponse) {}
-  // StreamAssignments creates a server-to-client assignment stream.
+  // OpenAssignmentsStream opens a new gRPC assignments stream.
   // The assignments are load-balanced over all the active assignment streams.
+  rpc OpenAssignmentsStream(OpenAssignmentsStreamRequest) returns (OpenAssignmentsStreamResponse) {}
+
+  // CloseAssignmentsStream closes a gRPC assignments stream.
+  rpc CloseAssignmentsStream(CloseAssignmentsStreamRequest) returns (CloseAssignmentsStreamResponse) {}
+
+  // GetPendingAssignmentsCount returns the number of assignments that the server will push to the worker.
+  // Calling WantAssignments increases this number.
+  rpc GetPendingAssignmentsCount(GetPendingAssignmentsCountRequest) returns (PendingAssignmentsCount) {}
+
+  // WantAssignments tells the server to send more assignments.
+  rpc WantAssignments(WantAssignmentsRequest) returns (WantAssignmentsResponse) {}
+
+  // StreamAssignments connects to the server-to-client assignment stream.
   rpc StreamAssignments(StreamAssignmentsRequest) returns (stream Assignment) {}
 }
 
-message StartWorkRequest {}
-message StartWorkResponse {}
+message OpenAssignmentsStreamRequest {}
+message OpenAssignmentsStreamResponse {
+  int64 stream_id = 1;
+}
 
-message StopWorkRequest {}
-message StopWorkResponse {}
+message CloseAssignmentsStreamRequest {
+  int64 stream_id = 1;
+}
+message CloseAssignmentsStreamResponse {}
 
-message StreamAssignmentsRequest {}
+message WantAssignmentsRequest {
+  int64 stream_id = 1;
+  int32 add_watermark = 2; // Request N additional tasks
+}
+message WantAssignmentsResponse {
+  int32 added_watermark = 1; // N additional tasks granted
+  int32 watermark = 2; // Total number of tasks granted
+}
 
-// Assignment is the
+message StreamAssignmentsRequest {
+  int64 stream_id = 1;
+}
+
+message GetPendingAssignmentsCountRequest {
+  int64 stream_id = 1;
+}
+
+message PendingAssignmentsCount {
+  int32 watermark = 1; // N additional tasks for this stream
+}
+
+// Assignment instructs the client to fetch an item.
 message Assignment {
   ItemLocator locator = 1;
   int32 kafka_partition = 2;

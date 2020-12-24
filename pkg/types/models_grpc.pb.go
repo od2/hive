@@ -17,11 +17,17 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AssignmentsClient interface {
-	// StartWork instructs the server a
-	StartWork(ctx context.Context, in *StartWorkRequest, opts ...grpc.CallOption) (*StartWorkResponse, error)
-	StopWork(ctx context.Context, in *StopWorkRequest, opts ...grpc.CallOption) (*StopWorkResponse, error)
-	// StreamAssignments opens a channel .
-	// When running multiple channels,
+	// OpenAssignmentsStream opens a new gRPC assignments stream.
+	// The assignments are load-balanced over all the active assignment streams.
+	OpenAssignmentsStream(ctx context.Context, in *OpenAssignmentsStreamRequest, opts ...grpc.CallOption) (*OpenAssignmentsStreamResponse, error)
+	// CloseAssignmentsStream closes a gRPC assignments stream.
+	CloseAssignmentsStream(ctx context.Context, in *CloseAssignmentsStreamRequest, opts ...grpc.CallOption) (*CloseAssignmentsStreamResponse, error)
+	// GetPendingAssignmentsCount returns the number of assignments that the server will push to the worker.
+	// Calling WantAssignments increases this number.
+	GetPendingAssignmentsCount(ctx context.Context, in *GetPendingAssignmentsCountRequest, opts ...grpc.CallOption) (*PendingAssignmentsCount, error)
+	// WantAssignments tells the server to send more assignments.
+	WantAssignments(ctx context.Context, in *WantAssignmentsRequest, opts ...grpc.CallOption) (*WantAssignmentsResponse, error)
+	// StreamAssignments connects to the server-to-client assignment stream.
 	StreamAssignments(ctx context.Context, in *StreamAssignmentsRequest, opts ...grpc.CallOption) (Assignments_StreamAssignmentsClient, error)
 }
 
@@ -33,18 +39,36 @@ func NewAssignmentsClient(cc grpc.ClientConnInterface) AssignmentsClient {
 	return &assignmentsClient{cc}
 }
 
-func (c *assignmentsClient) StartWork(ctx context.Context, in *StartWorkRequest, opts ...grpc.CallOption) (*StartWorkResponse, error) {
-	out := new(StartWorkResponse)
-	err := c.cc.Invoke(ctx, "/od2_network.hive.Assignments/StartWork", in, out, opts...)
+func (c *assignmentsClient) OpenAssignmentsStream(ctx context.Context, in *OpenAssignmentsStreamRequest, opts ...grpc.CallOption) (*OpenAssignmentsStreamResponse, error) {
+	out := new(OpenAssignmentsStreamResponse)
+	err := c.cc.Invoke(ctx, "/od2_network.hive.Assignments/OpenAssignmentsStream", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *assignmentsClient) StopWork(ctx context.Context, in *StopWorkRequest, opts ...grpc.CallOption) (*StopWorkResponse, error) {
-	out := new(StopWorkResponse)
-	err := c.cc.Invoke(ctx, "/od2_network.hive.Assignments/StopWork", in, out, opts...)
+func (c *assignmentsClient) CloseAssignmentsStream(ctx context.Context, in *CloseAssignmentsStreamRequest, opts ...grpc.CallOption) (*CloseAssignmentsStreamResponse, error) {
+	out := new(CloseAssignmentsStreamResponse)
+	err := c.cc.Invoke(ctx, "/od2_network.hive.Assignments/CloseAssignmentsStream", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *assignmentsClient) GetPendingAssignmentsCount(ctx context.Context, in *GetPendingAssignmentsCountRequest, opts ...grpc.CallOption) (*PendingAssignmentsCount, error) {
+	out := new(PendingAssignmentsCount)
+	err := c.cc.Invoke(ctx, "/od2_network.hive.Assignments/GetPendingAssignmentsCount", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *assignmentsClient) WantAssignments(ctx context.Context, in *WantAssignmentsRequest, opts ...grpc.CallOption) (*WantAssignmentsResponse, error) {
+	out := new(WantAssignmentsResponse)
+	err := c.cc.Invoke(ctx, "/od2_network.hive.Assignments/WantAssignments", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -87,11 +111,17 @@ func (x *assignmentsStreamAssignmentsClient) Recv() (*Assignment, error) {
 // All implementations must embed UnimplementedAssignmentsServer
 // for forward compatibility
 type AssignmentsServer interface {
-	// StartWork instructs the server a
-	StartWork(context.Context, *StartWorkRequest) (*StartWorkResponse, error)
-	StopWork(context.Context, *StopWorkRequest) (*StopWorkResponse, error)
-	// StreamAssignments opens a channel .
-	// When running multiple channels,
+	// OpenAssignmentsStream opens a new gRPC assignments stream.
+	// The assignments are load-balanced over all the active assignment streams.
+	OpenAssignmentsStream(context.Context, *OpenAssignmentsStreamRequest) (*OpenAssignmentsStreamResponse, error)
+	// CloseAssignmentsStream closes a gRPC assignments stream.
+	CloseAssignmentsStream(context.Context, *CloseAssignmentsStreamRequest) (*CloseAssignmentsStreamResponse, error)
+	// GetPendingAssignmentsCount returns the number of assignments that the server will push to the worker.
+	// Calling WantAssignments increases this number.
+	GetPendingAssignmentsCount(context.Context, *GetPendingAssignmentsCountRequest) (*PendingAssignmentsCount, error)
+	// WantAssignments tells the server to send more assignments.
+	WantAssignments(context.Context, *WantAssignmentsRequest) (*WantAssignmentsResponse, error)
+	// StreamAssignments connects to the server-to-client assignment stream.
 	StreamAssignments(*StreamAssignmentsRequest, Assignments_StreamAssignmentsServer) error
 	mustEmbedUnimplementedAssignmentsServer()
 }
@@ -100,11 +130,17 @@ type AssignmentsServer interface {
 type UnimplementedAssignmentsServer struct {
 }
 
-func (UnimplementedAssignmentsServer) StartWork(context.Context, *StartWorkRequest) (*StartWorkResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StartWork not implemented")
+func (UnimplementedAssignmentsServer) OpenAssignmentsStream(context.Context, *OpenAssignmentsStreamRequest) (*OpenAssignmentsStreamResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OpenAssignmentsStream not implemented")
 }
-func (UnimplementedAssignmentsServer) StopWork(context.Context, *StopWorkRequest) (*StopWorkResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StopWork not implemented")
+func (UnimplementedAssignmentsServer) CloseAssignmentsStream(context.Context, *CloseAssignmentsStreamRequest) (*CloseAssignmentsStreamResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CloseAssignmentsStream not implemented")
+}
+func (UnimplementedAssignmentsServer) GetPendingAssignmentsCount(context.Context, *GetPendingAssignmentsCountRequest) (*PendingAssignmentsCount, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPendingAssignmentsCount not implemented")
+}
+func (UnimplementedAssignmentsServer) WantAssignments(context.Context, *WantAssignmentsRequest) (*WantAssignmentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WantAssignments not implemented")
 }
 func (UnimplementedAssignmentsServer) StreamAssignments(*StreamAssignmentsRequest, Assignments_StreamAssignmentsServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamAssignments not implemented")
@@ -122,38 +158,74 @@ func RegisterAssignmentsServer(s grpc.ServiceRegistrar, srv AssignmentsServer) {
 	s.RegisterService(&Assignments_ServiceDesc, srv)
 }
 
-func _Assignments_StartWork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StartWorkRequest)
+func _Assignments_OpenAssignmentsStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenAssignmentsStreamRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AssignmentsServer).StartWork(ctx, in)
+		return srv.(AssignmentsServer).OpenAssignmentsStream(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/od2_network.hive.Assignments/StartWork",
+		FullMethod: "/od2_network.hive.Assignments/OpenAssignmentsStream",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AssignmentsServer).StartWork(ctx, req.(*StartWorkRequest))
+		return srv.(AssignmentsServer).OpenAssignmentsStream(ctx, req.(*OpenAssignmentsStreamRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Assignments_StopWork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StopWorkRequest)
+func _Assignments_CloseAssignmentsStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseAssignmentsStreamRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AssignmentsServer).StopWork(ctx, in)
+		return srv.(AssignmentsServer).CloseAssignmentsStream(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/od2_network.hive.Assignments/StopWork",
+		FullMethod: "/od2_network.hive.Assignments/CloseAssignmentsStream",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AssignmentsServer).StopWork(ctx, req.(*StopWorkRequest))
+		return srv.(AssignmentsServer).CloseAssignmentsStream(ctx, req.(*CloseAssignmentsStreamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Assignments_GetPendingAssignmentsCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPendingAssignmentsCountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssignmentsServer).GetPendingAssignmentsCount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/od2_network.hive.Assignments/GetPendingAssignmentsCount",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssignmentsServer).GetPendingAssignmentsCount(ctx, req.(*GetPendingAssignmentsCountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Assignments_WantAssignments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WantAssignmentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssignmentsServer).WantAssignments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/od2_network.hive.Assignments/WantAssignments",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssignmentsServer).WantAssignments(ctx, req.(*WantAssignmentsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -187,12 +259,20 @@ var Assignments_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*AssignmentsServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "StartWork",
-			Handler:    _Assignments_StartWork_Handler,
+			MethodName: "OpenAssignmentsStream",
+			Handler:    _Assignments_OpenAssignmentsStream_Handler,
 		},
 		{
-			MethodName: "StopWork",
-			Handler:    _Assignments_StopWork_Handler,
+			MethodName: "CloseAssignmentsStream",
+			Handler:    _Assignments_CloseAssignmentsStream_Handler,
+		},
+		{
+			MethodName: "GetPendingAssignmentsCount",
+			Handler:    _Assignments_GetPendingAssignmentsCount_Handler,
+		},
+		{
+			MethodName: "WantAssignments",
+			Handler:    _Assignments_WantAssignments_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
