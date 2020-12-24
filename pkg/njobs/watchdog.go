@@ -2,6 +2,8 @@ package njobs
 
 import (
 	"context"
+	"fmt"
+	"time"
 )
 
 // Watchdog observes the worker sessions for timeouts.
@@ -23,5 +25,22 @@ func (w *Watchdog) Run(ctx context.Context) error {
 }
 
 func (w *Watchdog) step(ctx context.Context) error {
-	panic("not implemented")
+	maxSleep, err := w.evalSessionExpire(ctx, time.Now().Unix(), int64(w.Options.SessionExpireBatch))
+	if err != nil {
+		return fmt.Errorf("failed to run expiration algorithm: %w", err)
+	}
+	var sleep time.Duration
+	if maxSleep > w.Options.TaskExpireInterval {
+		sleep = w.Options.TaskExpireInterval
+	} else {
+		sleep = maxSleep
+	}
+	timer := time.NewTimer(sleep)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

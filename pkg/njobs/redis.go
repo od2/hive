@@ -16,22 +16,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// TopicKeys specifies the Redis keys for topic-scoped information.
-type TopicKeys struct {
-	WorkerSessions string // No. active workers per session
-}
-
-// NewTopicKeys returns the default TopicKeys for a given Kafka topic.
-func NewTopicKeys(topic string) TopicKeys {
-	return TopicKeys{
-		WorkerSessions: topicKey(topic, 'S'),
-	}
-}
-
-func topicKey(topic string, field int8) string {
-	return fmt.Sprintf("njobs_v0\x00%s\x00%c", topic, rune(field))
-}
-
 // PartitionKeys specifies the Redis keys for partition-scoped information.
 type PartitionKeys struct {
 	// Session
@@ -110,6 +94,7 @@ type Scripts struct {
 	startSession    *redis.Script
 	stopSession     *redis.Script
 	addSessionQuota *redis.Script
+	expireSession   *redis.Script
 	commitRead      *redis.Script
 }
 
@@ -140,6 +125,10 @@ func LoadScripts(ctx context.Context, r *redis.Client) (*Scripts, error) {
 	}
 	s.addSessionQuota = redis.NewScript(addSessionQuotaScript)
 	if err := s.addSessionQuota.Load(ctx, r).Err(); err != nil {
+		return nil, err
+	}
+	s.expireSession = redis.NewScript(expireSessionScript)
+	if err := s.expireSession.Load(ctx, r).Err(); err != nil {
 		return nil, err
 	}
 	s.commitRead = redis.NewScript(commitReadScript)
@@ -249,6 +238,78 @@ func (r *RedisClient) EvalStopSession(ctx context.Context, worker int64, session
 // ErrSessionNotFound is thrown when trying to access a non-existent session.
 // This usually happens when trying to refresh an expired session.
 var ErrSessionNotFound = status.Error(codes.NotFound, "session not found")
+
+const expireSessionScript = `
+-- Keys
+local key_active_workers = KEYS[1]
+local key_session_count = KEYS[2]
+local key_session_expires = KEYS[3]
+local key_session_quota = KEYS[4]
+local key_worker_quota = KEYS[5]
+local key_results = KEYS[6]
+-- Arguments
+local time = ARGV[1]
+local limit = ARGV[2]
+local stream_prefix = ARGV[3]
+
+-- Pop expired items
+local expired = redis.call("ZRANGEBYSCORE", key_session_expires, "-inf", time-1, "LIMIT", 0, limit)
+redis.call("ZREM", expired)
+for i,session_key in ipairs(expired) do
+  local worker, session = struct.unpack(">ll", expire)
+  -- This is copy-paste from stopSessionScript.
+  local num_sessions = redis.call("HINCRBY", key_session_count, session_key, -1)
+  redis.call("HDEL", key_session_quota, session_key)
+  if num_sessions <= 0 then
+    -- All sessions are gone, terminate worker and dead-letter.
+    redis.call("ZREM", key_active_workers, worker_key)
+    local key_worker_stream = stream_prefix .. struct.pack(">l", worker)
+    local msgs = redis.call("XRANGE", key_worker_stream, "-", "+")
+    for i,msg in ipairs(msgs) do
+      redis.call("XADD", key_results, "*",
+        "worker", worker,
+        "ok", 0,
+        unpack(msg[2]))
+    end
+    redis.call("HDEL", key_worker_quota, worker_key)
+    redis.call("DEL", key_worker_stream)
+  end
+end
+-- Get time of next expiry
+local next_expiry_entry = redis.call("ZRANGE", key_expire, 0, 0, "WITHSCORES")
+local next_expiry = 0
+if next_expiry_entry then
+  next_expiry = next_expiry_entry[2]
+end
+return next_expiry
+`
+
+// evalSessionExpire pops expired sessions and returns the time to wait until next expiry.
+// It processes at most "limit" sessions at once.
+// The "time to wait" is set to -1 when there are no more items.
+func (r *RedisClient) evalSessionExpire(ctx context.Context, now int64, limit int64) (sleep time.Duration, err error) {
+	keys := []string{
+		r.PartitionKeys.ActiveWorkers,
+		r.PartitionKeys.SessionCount,
+		r.PartitionKeys.SessionExpires,
+		r.PartitionKeys.SessionQuota,
+		r.PartitionKeys.WorkerQuota,
+		r.PartitionKeys.Results,
+	}
+	nextExpiry, err := r.expireSession.Run(ctx, r.Redis, keys, now, limit, r.PartitionKeys.WorkerQueuePrefix).Int64()
+	if err != nil {
+		return 0, err
+	}
+	var waitTime time.Duration
+	if nextExpiry == 0 {
+		waitTime = -1
+	} else if nextExpiry <= now {
+		waitTime = 0
+	} else {
+		waitTime = time.Duration(nextExpiry-now) * time.Second
+	}
+	return waitTime, nil
+}
 
 const addSessionQuotaScript = `
 -- Keys
