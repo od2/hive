@@ -12,8 +12,7 @@ component Kafka as Kafka_K1 {
 
 component "Redis 1" as Redis_I1 {
   database NAssign as Redis_I1_NAssign
-  queue Expired as Redis_R1_Expired
-  queue Completed as Redis_R1_Completed
+  queue Results as Redis_R1_Results
   queue Worker_1 as Redis_R1_Worker_1
   queue Worker_2 as Redis_R1_Worker_2
 }
@@ -24,11 +23,9 @@ KafkaTasks_P1 ---> Assigner_A1: Tasks
 Assigner_A1 ---> Redis_I1_NAssign: Tasks
 Redis_I1_NAssign ---> Redis_R1_Worker_1
 Redis_I1_NAssign ---> Redis_R1_Worker_2
-Redis_R1_Expired <-- Redis_I1_NAssign
-Redis_R1_Completed <-- Redis_I1_NAssign
+Redis_R1_Results <-- Redis_I1_NAssign
 
-Kafka_K1_Results <-- Redis_R1_Expired: Dead-letter
-Kafka_K1_Results <-- Redis_R1_Completed: Ack
+Kafka_K1_Results <-- Redis_R1_Results
 
 cloud Workers {
     component Worker_1 {
@@ -53,8 +50,7 @@ Redis_R1_Worker_2 --> W2_P2
 
 component "Redis 2" as Redis_I2 {
   database NAssign as Redis_I2_NAssign
-  queue Expired as Redis_R2_Expired
-  queue Completed as Redis_R2_Completed
+  queue Results as Redis_R2_Results
   queue Worker_2 as Redis_R2_Worker_2
   queue Worker_3 as Redis_R2_Worker_3
 }
@@ -65,11 +61,9 @@ KafkaTasks_P2 ---> Assigner_A2: Tasks
 Assigner_A2 ---> Redis_I2_NAssign: Tasks
 Redis_I2_NAssign ---> Redis_R2_Worker_2
 Redis_I2_NAssign ---> Redis_R2_Worker_3
-Redis_R2_Expired <-- Redis_I2_NAssign
-Redis_R2_Completed <-- Redis_I2_NAssign
+Redis_R2_Results <-- Redis_I2_NAssign
 
-Kafka_K1_Results <-- Redis_R2_Expired: Dead-letter
-Kafka_K1_Results <-- Redis_R2_Completed: Ack
+Kafka_K1_Results <-- Redis_R2_Results
 
 Redis_R2_Worker_2 --> W2_P3
 Redis_R2_Worker_3 --> W3_P1
