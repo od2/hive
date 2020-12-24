@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/go-redis/redis/v8"
 	"go.od2.network/hive/pkg/auth"
@@ -98,20 +97,21 @@ func (s *Streamer) StreamAssignments(
 	session := Session{
 		RedisClient: s.RedisClient,
 		Worker:      worker.WorkerID,
-		Session:     req.StreamId, // TODO check if stream ID exists
+		Session:     req.StreamId,
 	}
+	sessionErrC := make(chan error, 1)
 	go func() {
 		defer cancel()
-		if err := session.Run(ctx, assignmentsC); err != nil {
-			// TODO Log error properly
-			fmt.Fprintln(os.Stderr, err)
-		}
+		defer close(sessionErrC)
+		sessionErrC <- session.Run(ctx, assignmentsC)
 	}()
 	// Loop through Redis Streams results.
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case sessionErr := <-sessionErrC:
+			return fmt.Errorf("session terminated: %w", sessionErr)
 		case batch := <-assignmentsC:
 			if err := outStream.Send(&types.AssignmentBatch{Assignments: batch}); err != nil {
 				return err
