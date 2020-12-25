@@ -20,8 +20,8 @@ message ItemPointer {
 
 enum TaskStatus {
   SUCCESS = 0;
-  TIMEOUT = 1;
-  CLIENT_FAILURE = 2;
+  CLIENT_FAILURE = 1;
+  TIMEOUT = 2;
 }
 
 message TaskResult {
@@ -37,20 +37,23 @@ message TaskResult {
 service Assignments {
   // OpenAssignmentsStream opens a new gRPC assignments stream.
   // The assignments are load-balanced over all the active assignment streams.
-  rpc OpenAssignmentsStream(OpenAssignmentsStreamRequest) returns (OpenAssignmentsStreamResponse) {}
+  rpc OpenAssignmentsStream(OpenAssignmentsStreamRequest) returns (OpenAssignmentsStreamResponse);
 
   // CloseAssignmentsStream closes a gRPC assignments stream.
-  rpc CloseAssignmentsStream(CloseAssignmentsStreamRequest) returns (CloseAssignmentsStreamResponse) {}
+  rpc CloseAssignmentsStream(CloseAssignmentsStreamRequest) returns (CloseAssignmentsStreamResponse);
 
   // GetPendingAssignmentsCount returns the number of assignments that the server will push to the worker.
   // Calling WantAssignments increases this number.
-  rpc GetPendingAssignmentsCount(GetPendingAssignmentsCountRequest) returns (PendingAssignmentsCount) {}
+  rpc GetPendingAssignmentsCount(GetPendingAssignmentsCountRequest) returns (PendingAssignmentsCount);
 
   // WantAssignments tells the server to send more assignments.
-  rpc WantAssignments(WantAssignmentsRequest) returns (WantAssignmentsResponse) {}
+  rpc WantAssignments(WantAssignmentsRequest) returns (WantAssignmentsResponse);
 
   // StreamAssignments connects to the server-to-client assignment stream.
-  rpc StreamAssignments(StreamAssignmentsRequest) returns (stream AssignmentBatch) {}
+  rpc StreamAssignments(StreamAssignmentsRequest) returns (stream AssignmentBatch);
+
+  // ReportAssignments reports about completed tasks.
+  rpc ReportAssignments(ReportAssignmentsRequest) returns (ReportAssignmentsResponse);
 }
 
 message OpenAssignmentsStreamRequest {}
@@ -88,9 +91,26 @@ message AssignmentBatch {
   repeated Assignment assignments = 1;
 }
 
+message KafkaPointer {
+  int32 partition = 1;
+  int64 offset = 2;
+}
+
 // Assignment instructs the client to fetch an item.
 message Assignment {
   ItemLocator locator = 1;
-  int32 kafka_partition = 2;
-  int64 kafka_offset = 3;
+  KafkaPointer kafka_pointer = 2;
+}
+
+message ReportAssignmentsRequest {
+  repeated AssignmentResult results = 1;
+}
+
+message AssignmentResult {
+  KafkaPointer kafka_pointer = 1;
+  TaskStatus status = 2;
+}
+
+message ReportAssignmentsResponse {
+  int64 acknowledged = 1;
 }

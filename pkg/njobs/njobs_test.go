@@ -109,10 +109,23 @@ func TestNJobs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, batch.Assignments, 5)
 	for i, assignment := range batch.Assignments {
-		assert.Equal(t, int64(32+i), assignment.KafkaOffset)
+		assert.Equal(t, int64(32+i), assignment.KafkaPointer.Offset)
 	}
 	t.Logf("Received batch of %d", len(batch.Assignments))
 	require.NoError(t, assignStream2.CloseSend())
+
+	// Acknowledge a few messages.
+	results := make([]*types.AssignmentResult, len(batch.Assignments))
+	for i, a := range batch.Assignments {
+		results[i] = &types.AssignmentResult{
+			KafkaPointer: a.KafkaPointer,
+			Status:       types.TaskStatus_SUCCESS,
+		}
+	}
+	_, err = client.ReportAssignments(ctx, &types.ReportAssignmentsRequest{
+		Results: results,
+	})
+	require.NoError(t, err)
 
 	// Shut down session.
 	require.NoError(t, streamer.EvalStopSession(ctx, worker1, sessionID1))

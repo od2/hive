@@ -16,6 +16,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// TODO Rename "inactive workers map" to "worker offsets map"
+
+// FIXME Expired sessions / assignments should become invisible
+
 // PartitionKeys specifies the Redis keys for partition-scoped information.
 type PartitionKeys struct {
 	// Session
@@ -139,6 +143,7 @@ func LoadScripts(ctx context.Context, r *redis.Client) (*Scripts, error) {
 }
 
 // startSessionScript creates a new worker session.
+// If the started session is the first, the worker delivery pipeline also gets spun up.
 // Keys:
 // 1. Hash Map sessions serial
 // 2. Hash Map sessions counter
@@ -147,6 +152,7 @@ func LoadScripts(ctx context.Context, r *redis.Client) (*Scripts, error) {
 // 1. Worker ID
 // 2. Session expire time
 // Returns: Session ID
+// language=Lua
 const startSessionScript = `
 -- Keys
 local key_session_serial = KEYS[1]
@@ -182,6 +188,39 @@ func (r *RedisClient) EvalStartSession(ctx context.Context, worker int64) (sessi
 	return r.startSession.Run(ctx, r.Redis, keys, worker, sessionExp, r.PartitionKeys.WorkerQueuePrefix).Int64()
 }
 
+// stopSessionScript is a hybrid script that runs two tasks:
+//
+// Stop specific session (mode 0)
+//
+// Stops and removes a specific session.
+// If no sessions exist anymore, the worker delivery pipeline gets deleted.
+//
+// Cleanup expired sessions (mode 1)
+//
+// Stops and removes all sessions that have expired (i.e. not removed
+// T
+//
+// This
+//
+//   Keys:
+//   1. Sorted Set active workers
+//   2. Sorted Set sessions per worker
+//   3. Sorted Set session expires
+//   4. Hash Map session quota
+//   5. Hash Map worker quota
+//   6. Stream worker assignments
+//   7. Stream results
+//   Arguments:
+//   1. Mode
+//   Arguments (mode 0):
+//   1. Worker ID
+//   2. Session ID
+//   Arguments (mode 1):
+//   1. Current unix epoch
+//   2. Max sessions to clean up at once
+//   3. Prefix of worker stream keys
+//
+// language=Lua
 const stopSessionScript = `
 -- Keys
 local key_active_workers = KEYS[1]
@@ -196,14 +235,16 @@ local key_results = KEYS[7]
 local worker = tonumber(ARGV[1])
 local session = tonumber(ARGV[2])
 
--- Delete session.
-local worker_key = struct.pack(">l", worker)
+-- Remove session entry.
 local session_key = struct.pack(">ll", worker, session)
+local deleted = redis.call("ZREM", key_session_expires, session_key)
 local num_sessions = redis.call("HINCRBY", key_session_count, session_key, -1)
-redis.call("ZREM", key_session_expires, session_key)
 redis.call("HDEL", key_session_quota, session_key)
+-- Ideally we also dead-letter the stream pending entries assigned to this session,
+-- but the remaining task expire workers will catch those anyways.
 if num_sessions <= 0 then
   -- All sessions are gone, terminate worker and dead-letter.
+  local worker_key = struct.pack(">l", worker)
   redis.call("ZREM", key_active_workers, worker_key)
   local msgs = redis.call("XRANGE", key_worker_stream, "-", "+")
   for i,msg in ipairs(msgs) do
@@ -239,6 +280,7 @@ func (r *RedisClient) EvalStopSession(ctx context.Context, worker int64, session
 // This usually happens when trying to refresh an expired session.
 var ErrSessionNotFound = status.Error(codes.NotFound, "session not found")
 
+// language=Lua
 const expireSessionScript = `
 -- Keys
 local key_active_workers = KEYS[1]
@@ -402,6 +444,8 @@ func (r *RedisClient) RefreshSession(ctx context.Context, worker int64, session 
 // 1. New Kafka consumer offset
 // 2. List of (worker, offset) tuples
 // 3. Status code
+//
+// language=Lua
 const assignTasksScript = `
 -- Keys
 local key_progress = KEYS[1]
@@ -484,11 +528,7 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 	offsetsMap := make(map[int64]*sarama.ConsumerMessage)
 	for i, msg := range batch {
 		argv[3+i*2] = msg.Offset
-		// Decode Kafka key as big endian int64 item ID.
-		if len(msg.Key) != 8 {
-			return 0, fmt.Errorf("invalid Kafka key: %x", msg.Key)
-		}
-		argv[3+(i*2)+1] = int64(binary.BigEndian.Uint64(msg.Key))
+		argv[3+(i*2)+1] = msg.Key
 		offsetsMap[msg.Offset] = msg
 	}
 	cmd := r.assignTasks.Run(ctx, r.Redis, keys, argv...)
@@ -533,6 +573,8 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 // 1. Current unix time
 // 2. Worker ID
 // Returns next expiration time
+//
+// language=Lua
 const expireTasksScript = `
 -- Keys
 local key_worker_stream = KEYS[1]
@@ -594,56 +636,56 @@ func (r *RedisClient) evalExpire(ctx context.Context, worker int64, batch uint) 
 // 2. Stream results
 // Arguments:
 // 1. Worker ID
-// 2. Stream ID
-// 3. List of Kafka message offsets to remove
+// 2. Status
+// 3-N: Kafka offsets to ack
 // Returns: Number of removed assignments
+//
+// language=Lua
 const ackScript = `
 -- Keys
 local key_worker_stream = KEYS[1]
 local key_results = KEYS[2]
 -- Arguments
 local worker = ARGV[1]
-local stream = ARGV[2]
-local offsets = ARGV[3]
-
--- Helper function to find the "item" key-value pair on a Redis streams item.
-local function find_item (kvps)
-  for i=1,#kvps,2 do
-    if kvps[i] == "item" then
-      return kvps[i+1]
-    end
-  end
-  error("no item field on stream item")
-end
 
 local count = 0
-for offset in offsets do
+for i=2,#ARGV,2 do
+  local offset = tonumber(ARGV[i])
+  local status = tonumber(ARGV[i+1])
   -- Pop details from task queue.
-  local msg_id = tostring(offset) .. "-0"
-  local xrange = redis.call("XRANGE", key_stream, "[" .. msg_id, "(" .. msg_id, "COUNT", 1)
+  local msg_id = ARGV[i] .. "-1"
+  redis.log(redis.LOG_WARNING, msg_id)
+  local xrange = redis.call("XRANGE", key_worker_stream, msg_id, msg_id, "COUNT", 1)
   if #xrange >= 1 then
-    local item = find_item(xrange[1][2])
     -- Remove key from stream.
-    local deleted = redis.call("XDEL", key_stream, msg_id)
+    local deleted = redis.call("XDEL", key_worker_stream, msg_id)
     count = count + deleted
     -- Republish on results queue.
     redis.call("XADD", key_results, "*",
-      "worker", worker, "offset", offset, "item", item, "ok", 1)
+      "worker", worker, "offset", offset, "status", status,
+      unpack(xrange[1][2]))
   end
 end
 return count
 `
 
 // EvalAck acknowledges a bunch of in-flight Kafka messages by their offsets for a worker.
-func (r *RedisClient) EvalAck(ctx context.Context, worker int64, session int64, offsets []int64) (uint, error) {
+func (r *RedisClient) EvalAck(ctx context.Context, worker int64, results []*types.AssignmentResult) (uint, error) {
 	keys := []string{
 		r.PartitionKeys.WorkerQueue(worker),
 		r.PartitionKeys.Results,
 	}
-	count, err := r.ack.Run(ctx, r.Redis, keys, worker, session, offsets).Int64()
+	argv := make([]interface{}, 1+len(results)*2)
+	argv[0] = worker
+	for i, a := range results[1:] {
+		argv[1+(i*2)] = a.KafkaPointer.Offset
+		argv[1+(i*2)+1] = int64(a.Status.Number())
+	}
+	count, err := r.ack.Run(ctx, r.Redis, keys, argv...).Int64()
 	return uint(count), err
 }
 
+// language=Lua
 const commitReadScript = `
 -- Keys
 local key_session_expires = KEYS[1]
@@ -679,9 +721,11 @@ func (r *RedisClient) EvalCommitRead(ctx context.Context, worker int64, session 
 // Session interfaces with a worker session.
 type Session struct {
 	*RedisClient
-	Worker     int64
-	Session    int64
-	nextExpire int64
+	Worker         int64
+	Session        int64
+	nextExpire     int64
+	Collection     string
+	KafkaPartition int32
 }
 
 // Run starts a blocking loop that sends all session messages to a Go channel.
@@ -750,11 +794,13 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 		}
 		assignments[i] = &types.Assignment{
 			Locator: &types.ItemLocator{
-				Collection: "", // TODO
+				Collection: s.Collection,
 				Id:         itemID,
 			},
-			KafkaPartition: 0, // TODO
-			KafkaOffset:    offset,
+			KafkaPointer: &types.KafkaPointer{
+				Partition: s.KafkaPartition,
+				Offset:    offset,
+			},
 		}
 	}
 	// Commit read.

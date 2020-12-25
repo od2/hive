@@ -121,3 +121,19 @@ func (s *Streamer) StreamAssignments(
 		}
 	}
 }
+
+// ReportAssignments reports about completed tasks.
+func (s *Streamer) ReportAssignments(
+	ctx context.Context,
+	req *types.ReportAssignmentsRequest,
+) (*types.ReportAssignmentsResponse, error) {
+	worker, err := auth.FromGRPCContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	count, err := s.EvalAck(ctx, worker.WorkerID, req.Results)
+	if err != nil {
+		return nil, err
+	}
+	return &types.ReportAssignmentsResponse{Acknowledged: int64(count)}, nil
+}

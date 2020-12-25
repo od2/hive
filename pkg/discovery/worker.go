@@ -78,8 +78,8 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 	}
 	// Run batch through dedup.
 	preDedupItems := make([]redisdedup.Item, len(pointers))
-	for _, ptr := range pointers {
-		preDedupItems = append(preDedupItems, ptr)
+	for i, ptr := range pointers {
+		preDedupItems[i] = ptr
 	}
 	dedupItems, err := w.Dedup.DedupItems(context.Background(), preDedupItems)
 	if err != nil {

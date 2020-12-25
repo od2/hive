@@ -77,7 +77,7 @@ card "N-Assign" as NAssign {
     by offset
   ]
   card H_Worker_Offset [
-    Idle Workers
+    Worker Offset
     ---
     H: Worker
     -> Offset
@@ -87,7 +87,7 @@ card "N-Assign" as NAssign {
 
   Assign -> H_Msg_Count: HINCRBY
   Z_Worker_Offset <--> Assign: ZPOPMIN\nZADD\nZREM
-  H_Worker_Offset <-- Assign: HSET\nHDEL
+  H_Worker_Offset <-- Assign: HSET
   INT_Progress <-- Assign : SET
 
   Z_Worker_Offset -[hidden]> H_Worker_Offset
@@ -112,10 +112,12 @@ card Delivery {
 }
 
 Z_Sess_Exp <-[#Green]- Sess_Want: HEXISTS
+Sess_Want ---[#Green]> H_Worker_Offset: HGET
+Sess_Want ---[#Green]> Z_Worker_Offset: ZADD
 
 Assign --> X_Worker: XADD\nXGROUP
 H_Worker_Quota <- Assign: HINCRBY -1
-Z_Sess_Exp <-- Sess_Read: ZADD
+Z_Sess_Exp <-[#DarkCyan]- Sess_Read: ZADD
 
 H_Sess_Quota <-[#DarkCyan]- Sess_Read: HINCRBY -n
 
