@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -123,8 +124,11 @@ func (w *writeLogger) Write(buf []byte) (n int, err error) {
 
 func (w *writeLogger) Flush() {
 	buf := w.buf.String()
-	if len(buf) > 0 {
-		w.line(buf)
+	lines := strings.Split(buf, "\n")
+	for _, line := range lines {
+		if len(line) > 0 {
+			w.line(line)
+		}
 	}
 	w.buf.Reset()
 }

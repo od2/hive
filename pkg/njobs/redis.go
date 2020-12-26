@@ -98,7 +98,6 @@ type Scripts struct {
 	startSession    *redis.Script
 	stopSession     *redis.Script
 	addSessionQuota *redis.Script
-	expireSession   *redis.Script
 	commitRead      *redis.Script
 }
 
@@ -131,10 +130,6 @@ func LoadScripts(ctx context.Context, r *redis.Client) (*Scripts, error) {
 	if err := s.addSessionQuota.Load(ctx, r).Err(); err != nil {
 		return nil, err
 	}
-	s.expireSession = redis.NewScript(expireSessionScript)
-	if err := s.expireSession.Load(ctx, r).Err(); err != nil {
-		return nil, err
-	}
 	s.commitRead = redis.NewScript(commitReadScript)
 	if err := s.commitRead.Load(ctx, r).Err(); err != nil {
 		return nil, err
@@ -165,10 +160,14 @@ local expire_time = ARGV[2]
 local stream_prefix = ARGV[3]
 
 -- Create session.
-local session_id = redis.call("HINCRBY", key_session_serial, worker, 1)
-local session_count = redis.call("HINCRBY", key_session_count, worker, 1)
+local worker_key = struct.pack(">l", worker)
+local session_id = redis.call("HINCRBY", key_session_serial, worker_key, 1)
+local session_count = redis.call("HINCRBY", key_session_count, worker_key, 1)
+redis.log(redis.LOG_VERBOSE,
+  string.format("njobs:add_session(%d) => id=%d total=%d", worker, session_id, session_count))
 if session_count == 1 then
   -- First session has to allocate worker queue.
+  redis.log(redis.LOG_VERBOSE, string.format("njobs:add_worker(%d)", worker))
   local worker_stream_key = stream_prefix .. struct.pack(">l", worker)
   redis.call("XGROUP", "CREATE", worker_stream_key, "main", 0, "MKSTREAM")
 end
@@ -188,19 +187,14 @@ func (r *RedisClient) EvalStartSession(ctx context.Context, worker int64) (sessi
 	return r.startSession.Run(ctx, r.Redis, keys, worker, sessionExp, r.PartitionKeys.WorkerQueuePrefix).Int64()
 }
 
-// stopSessionScript is a hybrid script that runs two tasks:
-//
-// Stop specific session (mode 0)
-//
-// Stops and removes a specific session.
+// stopSessionScript is a hybrid script that runs with two input modes, removing sessions.
 // If no sessions exist anymore, the worker delivery pipeline gets deleted.
 //
-// Cleanup expired sessions (mode 1)
+// Mode 0 stops and removes a specific session.
 //
-// Stops and removes all sessions that have expired (i.e. not removed
-// T
+// Mode 1 stops and removes all sessions that have expired (i.e. not refreshed in the timeout interval).
 //
-// This
+// Usage
 //
 //   Keys:
 //   1. Sorted Set active workers
@@ -208,17 +202,17 @@ func (r *RedisClient) EvalStartSession(ctx context.Context, worker int64) (sessi
 //   3. Sorted Set session expires
 //   4. Hash Map session quota
 //   5. Hash Map worker quota
-//   6. Stream worker assignments
-//   7. Stream results
+//   6. Stream results
 //   Arguments:
 //   1. Mode
+//   2. Prefix stream worker
 //   Arguments (mode 0):
-//   1. Worker ID
-//   2. Session ID
+//   3. Worker ID
+//   4. Session ID
 //   Arguments (mode 1):
-//   1. Current unix epoch
-//   2. Max sessions to clean up at once
-//   3. Prefix of worker stream keys
+//   3. Current unix epoch
+//   4. Max sessions to clean up at once
+//   5. Prefix of worker stream keys
 //
 // language=Lua
 const stopSessionScript = `
@@ -228,33 +222,71 @@ local key_session_count = KEYS[2]
 local key_session_expires = KEYS[3]
 local key_session_quota = KEYS[4]
 local key_worker_quota = KEYS[5]
-local key_worker_stream = KEYS[6]
-local key_results = KEYS[7]
+local key_results = KEYS[6]
 
--- Arguments
-local worker = tonumber(ARGV[1])
-local session = tonumber(ARGV[2])
+local mode = tonumber(ARGV[1])
+local stream_prefix = ARGV[2]
 
--- Remove session entry.
-local session_key = struct.pack(">ll", worker, session)
-local deleted = redis.call("ZREM", key_session_expires, session_key)
-local num_sessions = redis.call("HINCRBY", key_session_count, session_key, -1)
-redis.call("HDEL", key_session_quota, session_key)
--- Ideally we also dead-letter the stream pending entries assigned to this session,
--- but the remaining task expire workers will catch those anyways.
-if num_sessions <= 0 then
+local function remove_worker (worker)
+  redis.log(redis.LOG_VERBOSE, string.format("njobs:remove_worker(%d)", worker))
   -- All sessions are gone, terminate worker and dead-letter.
   local worker_key = struct.pack(">l", worker)
-  redis.call("ZREM", key_active_workers, worker_key)
+  local key_worker_stream = stream_prefix .. worker_key
   local msgs = redis.call("XRANGE", key_worker_stream, "-", "+")
   for i,msg in ipairs(msgs) do
+    local msg_id = msg[1]
+    local offset = string.sub(msg_id, 1, string.find(msg_id, "-") - 1)
     redis.call("XADD", key_results, "*",
       "worker", worker,
-      "ok", 0,
+      "status", 2,
+      "offset", offset,
       unpack(msg[2]))
   end
+  redis.call("ZREM", key_active_workers, worker_key)
   redis.call("HDEL", key_worker_quota, worker_key)
+  redis.call("HDEL", key_session_count, worker_key)
   redis.call("DEL", key_worker_stream)
+end
+
+local function remove_session (worker, session)
+  local worker_key = struct.pack(">l", worker)
+  local session_key = struct.pack(">ll", worker, session)
+  local deleted = redis.call("ZREM", key_session_expires, session_key)
+  local num_sessions = redis.call("HINCRBY", key_session_count, worker_key, -1)
+  redis.log(redis.LOG_VERBOSE, string.format("njobs:remove_session(%d, %d) => total=%d", worker, session, num_sessions))
+  redis.call("HDEL", key_session_quota, session_key)
+  -- Ideally we also dead-letter the stream pending entries assigned to this session,
+  -- but the remaining task expire workers will catch those anyways.
+  if num_sessions <= 0 then
+    remove_worker (worker)
+  end
+  return deleted
+end
+
+if mode == 0 then
+  -- Remove session entry.
+  local worker = tonumber(ARGV[3])
+  local session = tonumber(ARGV[4])
+  return remove_session(worker, session)
+elseif mode == 1 then
+  local time = ARGV[3]
+  local limit = ARGV[4]
+  -- Pop expired items
+  local expired = redis.call("ZRANGEBYSCORE", key_session_expires, "-inf", time-1, "LIMIT", 0, limit)
+  redis.call("ZREM", expired)
+  for i,session_key in ipairs(expired) do
+    local worker, session = struct.unpack(">ll", session_key)
+    remove_session(worker, session)
+  end
+  -- Get time of next expiry
+  local next_expiry_entry = redis.call("ZRANGE", key_expire, 0, 0, "WITHSCORES")
+  local next_expiry = 0
+  if next_expiry_entry then
+    next_expiry = next_expiry_entry[2]
+  end
+  return next_expiry
+else
+  error("remove_session: unknown mode " .. tostring(mode))
 end
 `
 
@@ -266,10 +298,11 @@ func (r *RedisClient) EvalStopSession(ctx context.Context, worker int64, session
 		r.PartitionKeys.SessionExpires,
 		r.PartitionKeys.SessionQuota,
 		r.PartitionKeys.WorkerQuota,
-		r.PartitionKeys.WorkerQueue(worker),
 		r.PartitionKeys.Results,
 	}
-	err := r.stopSession.Run(ctx, r.Redis, keys, worker, session).Err()
+	err := r.stopSession.Run(ctx, r.Redis, keys,
+		0, r.PartitionKeys.WorkerQueuePrefix,
+		worker, session).Err()
 	if errors.Is(err, redis.Nil) {
 		return nil
 	}
@@ -279,52 +312,6 @@ func (r *RedisClient) EvalStopSession(ctx context.Context, worker int64, session
 // ErrSessionNotFound is thrown when trying to access a non-existent session.
 // This usually happens when trying to refresh an expired session.
 var ErrSessionNotFound = status.Error(codes.NotFound, "session not found")
-
-// language=Lua
-const expireSessionScript = `
--- Keys
-local key_active_workers = KEYS[1]
-local key_session_count = KEYS[2]
-local key_session_expires = KEYS[3]
-local key_session_quota = KEYS[4]
-local key_worker_quota = KEYS[5]
-local key_results = KEYS[6]
--- Arguments
-local time = ARGV[1]
-local limit = ARGV[2]
-local stream_prefix = ARGV[3]
-
--- Pop expired items
-local expired = redis.call("ZRANGEBYSCORE", key_session_expires, "-inf", time-1, "LIMIT", 0, limit)
-redis.call("ZREM", expired)
-for i,session_key in ipairs(expired) do
-  local worker, session = struct.unpack(">ll", expire)
-  -- This is copy-paste from stopSessionScript.
-  local num_sessions = redis.call("HINCRBY", key_session_count, session_key, -1)
-  redis.call("HDEL", key_session_quota, session_key)
-  if num_sessions <= 0 then
-    -- All sessions are gone, terminate worker and dead-letter.
-    redis.call("ZREM", key_active_workers, worker_key)
-    local key_worker_stream = stream_prefix .. struct.pack(">l", worker)
-    local msgs = redis.call("XRANGE", key_worker_stream, "-", "+")
-    for i,msg in ipairs(msgs) do
-      redis.call("XADD", key_results, "*",
-        "worker", worker,
-        "ok", 0,
-        unpack(msg[2]))
-    end
-    redis.call("HDEL", key_worker_quota, worker_key)
-    redis.call("DEL", key_worker_stream)
-  end
-end
--- Get time of next expiry
-local next_expiry_entry = redis.call("ZRANGE", key_expire, 0, 0, "WITHSCORES")
-local next_expiry = 0
-if next_expiry_entry then
-  next_expiry = next_expiry_entry[2]
-end
-return next_expiry
-`
 
 // evalSessionExpire pops expired sessions and returns the time to wait until next expiry.
 // It processes at most "limit" sessions at once.
@@ -338,7 +325,9 @@ func (r *RedisClient) evalSessionExpire(ctx context.Context, now int64, limit in
 		r.PartitionKeys.WorkerQuota,
 		r.PartitionKeys.Results,
 	}
-	nextExpiry, err := r.expireSession.Run(ctx, r.Redis, keys, now, limit, r.PartitionKeys.WorkerQueuePrefix).Int64()
+	nextExpiry, err := r.stopSession.Run(ctx, r.Redis, keys,
+		1, r.PartitionKeys.WorkerQueuePrefix,
+		now, limit).Int64()
 	if err != nil {
 		return 0, err
 	}
@@ -353,6 +342,7 @@ func (r *RedisClient) evalSessionExpire(ctx context.Context, now int64, limit in
 	return waitTime, nil
 }
 
+// language=Lua
 const addSessionQuotaScript = `
 -- Keys
 local key_worker_quota = KEYS[1]
@@ -480,9 +470,8 @@ for i=4,#ARGV,2 do
     redis.call("ZADD", key_active_workers, offset, worker_key)
 	redis.call("HSET", key_idle_workers, worker_key, offset)
     -- Push task to worker queue.
-    local entry = struct.pack(">ll", worker, offset)
-    local worker_stream_key = stream_prefix .. worker_key
-    redis.call("XADD", worker_stream_key, tostring(offset) .. "-1",
+    local key_worker_stream = stream_prefix .. worker_key
+    redis.call("XADD", key_worker_stream, tostring(offset) .. "-1",
       "exp_time", exp_time, "item", item)
     -- Consume worker quota, and pause worker if out of quota.
     local worker_quota = redis.call("HINCRBY", key_worker_quota, worker_key, -1)
@@ -601,7 +590,7 @@ while true do
     if exp_time < unix_time then
       redis.call("XADD", key_results, "*",
         "worker", worker,
-        "ok", 0,
+        "status", 2,
         unpack(msg[2]))
       redis.call("XDEL", key_worker_stream, msg[1])
     else
@@ -654,7 +643,6 @@ for i=2,#ARGV,2 do
   local status = tonumber(ARGV[i+1])
   -- Pop details from task queue.
   local msg_id = ARGV[i] .. "-1"
-  redis.log(redis.LOG_WARNING, msg_id)
   local xrange = redis.call("XRANGE", key_worker_stream, msg_id, msg_id, "COUNT", 1)
   if #xrange >= 1 then
     -- Remove key from stream.
@@ -677,7 +665,7 @@ func (r *RedisClient) EvalAck(ctx context.Context, worker int64, results []*type
 	}
 	argv := make([]interface{}, 1+len(results)*2)
 	argv[0] = worker
-	for i, a := range results[1:] {
+	for i, a := range results {
 		argv[1+(i*2)] = a.KafkaPointer.Offset
 		argv[1+(i*2)+1] = int64(a.Status.Number())
 	}

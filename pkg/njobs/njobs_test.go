@@ -2,11 +2,12 @@ package njobs
 
 import (
 	"context"
-	"encoding/binary"
+	"fmt"
 	"net"
 	"testing"
 
 	"github.com/Shopify/sarama"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.od2.network/hive/pkg/redistest"
@@ -90,16 +91,16 @@ func TestNJobs(t *testing.T) {
 	msgBatch := make([]*sarama.ConsumerMessage, 16)
 	for i := range msgBatch {
 		msgBatch[i] = &sarama.ConsumerMessage{
-			Key:       kafkaMessageKey(32 + int64(i)),
+			Key:       []byte(fmt.Sprintf("item_%d", i)),
 			Value:     nil,
 			Topic:     topic,
 			Partition: partition,
-			Offset:    32 + int64(i),
+			Offset:    128 + int64(i),
 		}
 	}
 	offset, err := streamer.evalAssignTasks(ctx, msgBatch)
 	assert.EqualError(t, err, "no workers available")
-	require.Equal(t, int64(36), offset, "wrong tasks assigned")
+	require.Equal(t, int64(132), offset, "wrong tasks assigned")
 
 	// Try consuming messages on an existing session.
 	assignStream2, err := client.StreamAssignments(ctx, &types.StreamAssignmentsRequest{StreamId: sessionID1})
@@ -109,17 +110,23 @@ func TestNJobs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, batch.Assignments, 5)
 	for i, assignment := range batch.Assignments {
-		assert.Equal(t, int64(32+i), assignment.KafkaPointer.Offset)
+		assert.Equal(t, int64(128+i), assignment.KafkaPointer.Offset)
 	}
 	t.Logf("Received batch of %d", len(batch.Assignments))
 	require.NoError(t, assignStream2.CloseSend())
 
 	// Acknowledge a few messages.
-	results := make([]*types.AssignmentResult, len(batch.Assignments))
-	for i, a := range batch.Assignments {
+	results := make([]*types.AssignmentResult, 4)
+	for i, a := range batch.Assignments[:4] {
+		var status types.TaskStatus
+		if i%2 == 0 {
+			status = types.TaskStatus_SUCCESS
+		} else {
+			status = types.TaskStatus_CLIENT_FAILURE
+		}
 		results[i] = &types.AssignmentResult{
 			KafkaPointer: a.KafkaPointer,
-			Status:       types.TaskStatus_SUCCESS,
+			Status:       status,
 		}
 	}
 	_, err = client.ReportAssignments(ctx, &types.ReportAssignmentsRequest{
@@ -127,13 +134,74 @@ func TestNJobs(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// Read all results from Redis.
+	results1, err := rc.Redis.XRange(ctx, rc.PartitionKeys.Results, "-", "+").Result()
+	require.NoError(t, err)
+	for i := range results1 {
+		require.NoError(t, rc.Redis.XDel(ctx, rc.PartitionKeys.Results, results1[i].ID).Err())
+		results1[i].ID = ""
+		delete(results1[i].Values, "exp_time")
+	}
+	assert.Equal(t, []redis.XMessage{
+		{Values: map[string]interface{}{
+			"item":   "item_0",
+			"offset": "128",
+			"status": "0",
+			"worker": "1",
+		}},
+		{Values: map[string]interface{}{
+			"item":   "item_1",
+			"offset": "129",
+			"status": "1",
+			"worker": "1",
+		}},
+		{Values: map[string]interface{}{
+			"item":   "item_2",
+			"offset": "130",
+			"status": "0",
+			"worker": "1",
+		}},
+		{Values: map[string]interface{}{
+			"item":   "item_3",
+			"offset": "131",
+			"status": "1",
+			"worker": "1",
+		}},
+	}, results1)
+
+	// Read worker queue.
+	queue1, err := rc.Redis.XRange(ctx, rc.PartitionKeys.WorkerQueue(worker1), "-", "+").Result()
+	require.NoError(t, err)
+	for i := range queue1 {
+		delete(queue1[i].Values, "exp_time")
+	}
+	assert.Equal(t, []redis.XMessage{
+		{
+			ID: "132-1",
+			Values: map[string]interface{}{
+				"item": "item_4",
+			},
+		},
+	}, queue1)
+
 	// Shut down session.
 	require.NoError(t, streamer.EvalStopSession(ctx, worker1, sessionID1))
 	t.Logf("Stopped session %d for worker %d", sessionID1, worker1)
-}
 
-func kafkaMessageKey(itemID int64) []byte {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, uint64(itemID))
-	return buf
+	// Read all results from Redis.
+	results3, err := rc.Redis.XRange(ctx, rc.PartitionKeys.Results, "-", "+").Result()
+	require.NoError(t, err)
+	for i := range results3 {
+		require.NoError(t, rc.Redis.XDel(ctx, rc.PartitionKeys.Results, results3[i].ID).Err())
+		results3[i].ID = ""
+		delete(results3[i].Values, "exp_time")
+	}
+	assert.Equal(t, []redis.XMessage{
+		{Values: map[string]interface{}{
+			"item":   "item_4",
+			"offset": "132",
+			"status": "2",
+			"worker": "1",
+		}},
+	}, results3)
 }
