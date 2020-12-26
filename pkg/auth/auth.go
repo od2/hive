@@ -2,30 +2,45 @@ package auth
 
 import (
 	"context"
-	"fmt"
-	"strconv"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
-// Context describes the auth context of a request.
-type Context struct {
-	WorkerID int64
+// MDAuthorization is the authorization metadata key.
+const MDAuthorization = "authorization"
+
+// Auth represents client auth.
+type Auth struct {
+	Token string
 }
 
-// FromGRPCContext reads the auth context from gRPC headers.
-func FromGRPCContext(ctx context.Context) (*Context, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no gRPC metadata")
+// Unary returns an auth unary client interceptor.
+func (a *Auth) Unary() grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply interface{},
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		opts ...grpc.CallOption,
+	) error {
+		ctx = metadata.AppendToOutgoingContext(ctx, MDAuthorization, a.Token)
+		return invoker(ctx, method, req, reply, cc, opts...)
 	}
-	workerIDList := md.Get("worker-id")
-	if len(workerIDList) != 1 {
-		return nil, fmt.Errorf("got %d worker-id fields", len(workerIDList))
+}
+
+// Stream returns an auth stream client interceptor.
+func (a *Auth) Stream() grpc.StreamClientInterceptor {
+	return func(
+		ctx context.Context,
+		desc *grpc.StreamDesc,
+		cc *grpc.ClientConn,
+		method string,
+		streamer grpc.Streamer,
+		opts ...grpc.CallOption,
+	) (grpc.ClientStream, error) {
+		ctx = metadata.AppendToOutgoingContext(ctx, MDAuthorization, a.Token)
+		return streamer(ctx, desc, cc, method, opts...)
 	}
-	workerID, err := strconv.ParseInt(workerIDList[0], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid worker-id: %w", err)
-	}
-	return &Context{WorkerID: workerID}, nil
 }

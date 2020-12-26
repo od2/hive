@@ -2,6 +2,7 @@ package njobs
 
 import (
 	"context"
+	"encoding/binary"
 	"io"
 	"net"
 	"strconv"
@@ -13,12 +14,14 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.od2.network/hive/pkg/auth"
+	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/redistest"
 	"go.od2.network/hive/pkg/saramamock"
+	"go.od2.network/hive/pkg/token"
 	"go.od2.network/hive/pkg/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -180,6 +183,7 @@ type benchStack struct {
 	innerCtx    context.Context
 	innerCancel context.CancelFunc
 	// Modules
+	signer   token.Signer
 	assigner *Assigner
 	listener *bufconn.Listener
 	server   *grpc.Server
@@ -239,7 +243,15 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 		lis.Close()
 	}()
 	// Build gRPC server.
-	server := grpc.NewServer()
+	signer := token.NewSimpleSigner(new([32]byte))
+	interceptor := authgw.Interceptor{
+		Backend: simpleTokenBackend{},
+		Signer:  signer,
+	}
+	server := grpc.NewServer(
+		grpc.UnaryInterceptor(interceptor.Unary()),
+		grpc.StreamInterceptor(interceptor.Stream()),
+	)
 	types.RegisterAssignmentsServer(server, streamer)
 	// Connect to Redis.
 	return &benchStack{
@@ -249,6 +261,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 		RedisClient: rc,
 		Session:     session,
 		Claim:       claim,
+		signer:      signer,
 		opts:        opts,
 		ctx:         ctx,
 		cancel:      cancel,
@@ -407,34 +420,31 @@ func (stack *benchStack) newClient(workerID int64) (types.AssignmentsClient, io.
 	dialer := func(context.Context, string) (net.Conn, error) {
 		return stack.listener.Dial()
 	}
+	exp, err := token.TimeToExp(time.Now().Add(16 * time.Hour))
+	require.NoError(stack.T, err)
+	payload := token.Payload{
+		Exp: exp,
+	}
+	// Put the worker ID into the first 8 bytes.
+	binary.BigEndian.PutUint64(payload.ID[:], uint64(workerID))
+	sp, err := stack.signer.Sign(payload)
+	require.NoError(stack.T, err)
+	authInterceptor := auth.Auth{Token: token.Marshal(sp)}
 	conn, err := grpc.DialContext(stack.ctx, "bufnet",
 		grpc.WithContextDialer(dialer),
 		grpc.WithInsecure(),
-		grpc.WithUnaryInterceptor(withClientAuthUnary(workerID)),
-		grpc.WithStreamInterceptor(withClientAuthStream(workerID)))
+		grpc.WithUnaryInterceptor(authInterceptor.Unary()),
+		grpc.WithStreamInterceptor(authInterceptor.Stream()))
 	require.NoError(stack.T, err, "failed to connect to gRPC")
 	return types.NewAssignmentsClient(conn), conn
 }
 
-func withClientAuthUnary(workerID int64) grpc.UnaryClientInterceptor {
-	workerIDStr := strconv.FormatInt(workerID, 10)
-	return func(
-		ctx context.Context,
-		method string,
-		req, reply interface{},
-		cc *grpc.ClientConn,
-		invoker grpc.UnaryInvoker,
-		opts ...grpc.CallOption,
-	) error {
-		ctx = metadata.AppendToOutgoingContext(ctx, "worker-id", workerIDStr)
-		return invoker(ctx, method, req, reply, cc, opts...)
-	}
-}
+type simpleTokenBackend struct{}
 
-func withClientAuthStream(workerID int64) grpc.StreamClientInterceptor {
-	workerIDStr := strconv.FormatInt(workerID, 10)
-	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		ctx = metadata.AppendToOutgoingContext(ctx, "worker-id", workerIDStr)
-		return streamer(ctx, desc, cc, method, opts...)
-	}
+func (simpleTokenBackend) LookupToken(_ context.Context, id token.ID) (*authgw.TokenInfo, error) {
+	workerID := int64(binary.BigEndian.Uint64(id[:]))
+	return &authgw.TokenInfo{
+		WorkerID: workerID,
+		Valid:    true,
+	}, nil
 }

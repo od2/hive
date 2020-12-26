@@ -10,17 +10,18 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/redistest"
 	"go.od2.network/hive/pkg/types"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 )
 
 func TestNJobs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ctx = metadata.AppendToOutgoingContext(ctx, "worker-id", "1")
+	authCtx := &authgw.Context{WorkerID: 1}
+	ctx = authgw.WithContext(ctx, authCtx)
 	rd := redistest.NewRedis(ctx, t)
 	defer rd.Close()
 
@@ -46,7 +47,27 @@ func TestNJobs(t *testing.T) {
 	}
 	lis := bufconn.Listen(1024 * 1024)
 	defer lis.Close()
-	serv := grpc.NewServer()
+	serv := grpc.NewServer(
+		grpc.UnaryInterceptor(func(
+			ctx context.Context,
+			req interface{},
+			info *grpc.UnaryServerInfo,
+			handler grpc.UnaryHandler,
+		) (resp interface{}, err error) {
+			return handler(authgw.WithContext(ctx, authCtx), req)
+		}),
+		grpc.StreamInterceptor(func(
+			srv interface{},
+			ss grpc.ServerStream,
+			info *grpc.StreamServerInfo,
+			handler grpc.StreamHandler,
+		) error {
+			return handler(srv, &serverStream{
+				ServerStream: ss,
+				ctx:          authgw.WithContext(ctx, authCtx),
+			})
+		}),
+	)
 	types.RegisterAssignmentsServer(serv, &streamer)
 	go serv.Serve(lis)
 	// Build assignments client.
@@ -219,4 +240,14 @@ func TestNJobs(t *testing.T) {
 			"worker": "1",
 		}},
 	}, results3)
+}
+
+type serverStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+// Context returns the embedded context.
+func (s *serverStream) Context() context.Context {
+	return s.ctx
 }
