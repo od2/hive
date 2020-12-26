@@ -2,7 +2,7 @@ on: [push, pull_request]
 name: Test
 jobs:
   unit_test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
     - name: Install Go
       uses: actions/setup-go@v2
@@ -21,4 +21,4 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
     - name: Test
-      run: go test ./...
+      run: go test -short ./...

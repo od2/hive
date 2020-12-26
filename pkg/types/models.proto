@@ -7,7 +7,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 message ItemLocator {
-  int64 collection = 1;
+  string collection = 1;
   string id = 2;
 }
 
@@ -20,8 +20,8 @@ message ItemPointer {
 
 enum TaskStatus {
   SUCCESS = 0;
-  TIMEOUT = 1;
-  CLIENT_FAILURE = 2;
+  CLIENT_FAILURE = 1;
+  TIMEOUT = 2;
 }
 
 message TaskResult {
@@ -31,4 +31,86 @@ message TaskResult {
   TaskStatus status = 4;
   google.protobuf.Timestamp finish_time = 5;
   google.protobuf.Duration duration = 6;
+}
+
+// Assignments streams task assignments to workers.
+service Assignments {
+  // OpenAssignmentsStream opens a new gRPC assignments stream.
+  // The assignments are load-balanced over all the active assignment streams.
+  rpc OpenAssignmentsStream(OpenAssignmentsStreamRequest) returns (OpenAssignmentsStreamResponse);
+
+  // CloseAssignmentsStream closes a gRPC assignments stream.
+  rpc CloseAssignmentsStream(CloseAssignmentsStreamRequest) returns (CloseAssignmentsStreamResponse);
+
+  // GetPendingAssignmentsCount returns the number of assignments that the server will push to the worker.
+  // Calling WantAssignments increases this number.
+  rpc GetPendingAssignmentsCount(GetPendingAssignmentsCountRequest) returns (PendingAssignmentsCount);
+
+  // WantAssignments tells the server to send more assignments.
+  rpc WantAssignments(WantAssignmentsRequest) returns (WantAssignmentsResponse);
+
+  // StreamAssignments connects to the server-to-client assignment stream.
+  rpc StreamAssignments(StreamAssignmentsRequest) returns (stream AssignmentBatch);
+
+  // ReportAssignments reports about completed tasks.
+  rpc ReportAssignments(ReportAssignmentsRequest) returns (ReportAssignmentsResponse);
+}
+
+message OpenAssignmentsStreamRequest {}
+message OpenAssignmentsStreamResponse {
+  int64 stream_id = 1;
+}
+
+message CloseAssignmentsStreamRequest {
+  int64 stream_id = 1;
+}
+message CloseAssignmentsStreamResponse {}
+
+message WantAssignmentsRequest {
+  int64 stream_id = 1;
+  int32 add_watermark = 2; // Request N additional tasks
+}
+message WantAssignmentsResponse {
+  int32 added_watermark = 1; // N additional tasks granted
+  int32 watermark = 2; // Total number of tasks granted
+}
+
+message StreamAssignmentsRequest {
+  int64 stream_id = 1;
+}
+
+message GetPendingAssignmentsCountRequest {
+  int64 stream_id = 1;
+}
+
+message PendingAssignmentsCount {
+  int32 watermark = 1; // N additional tasks for this stream
+}
+
+message AssignmentBatch {
+  repeated Assignment assignments = 1;
+}
+
+message KafkaPointer {
+  int32 partition = 1;
+  int64 offset = 2;
+}
+
+// Assignment instructs the client to fetch an item.
+message Assignment {
+  ItemLocator locator = 1;
+  KafkaPointer kafka_pointer = 2;
+}
+
+message ReportAssignmentsRequest {
+  repeated AssignmentResult results = 1;
+}
+
+message AssignmentResult {
+  KafkaPointer kafka_pointer = 1;
+  TaskStatus status = 2;
+}
+
+message ReportAssignmentsResponse {
+  int64 acknowledged = 1;
 }

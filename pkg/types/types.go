@@ -1,7 +1,7 @@
 // Package types defines Protobuf types and gRPC interfaces.
 package types
 
-//go:generate protoc -I=. --go_out=plugins:. --go_opt=paths=source_relative models.proto
+//go:generate protoc -I=. --go_out=plugins:. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative models.proto
 
 // Check verifies all required fields are set.
 func (m *ItemPointer) Check() bool {

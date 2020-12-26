@@ -2,12 +2,14 @@
 package redistest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,7 +28,7 @@ type Redis struct {
 }
 
 // NewRedis starts an ephemeral Redis server and returns a client.
-func NewRedis(ctx context.Context, t *testing.T) *Redis {
+func NewRedis(ctx context.Context, t testing.TB) *Redis {
 	dir, err := ioutil.TempDir("", "redis-")
 	if err != nil {
 		panic("failed to get temp dir: " + err.Error())
@@ -42,12 +44,27 @@ func NewRedis(ctx context.Context, t *testing.T) *Redis {
 	redisCmd.Dir = dir
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
-	go func() {
+	go func(redisCmd *exec.Cmd) {
 		defer wg.Done()
-		output, err := redisCmd.CombinedOutput()
+		// Log stdout line-by-line
+		stdoutLogger := &writeLogger{
+			line: func(s string) {
+				t.Log("Redis:", s)
+			},
+		}
+		defer stdoutLogger.Flush()
+		redisCmd.Stdout = stdoutLogger
+		// Log stderr line-by-line
+		stderrLogger := &writeLogger{
+			line: func(s string) {
+				t.Log("Redis:", s)
+			},
+		}
+		defer stderrLogger.Flush()
+		redisCmd.Stderr = stderrLogger
+		err = redisCmd.Run()
 		t.Log("Redis exited:", err)
-		t.Log("Redis Logs:\n" + string(output))
-	}()
+	}(redisCmd)
 
 	t.Log("redistest: Started Redis")
 
@@ -88,4 +105,36 @@ func (r *Redis) Close() {
 	r.cancel()
 	os.RemoveAll(r.tempDir)
 	r.wg.Wait()
+}
+
+type writeLogger struct {
+	buf  bytes.Buffer
+	line func(string)
+}
+
+func (w *writeLogger) Write(buf []byte) (n int, err error) {
+	splits := bytes.Split(buf, []byte("\n"))
+	if len(splits) <= 1 {
+		w.buf.Write(buf)
+	} else {
+		w.buf.Write(splits[0])
+		w.line(string(splits[0]))
+		w.buf.Reset()
+		for i := 1; i < len(splits)-1; i++ {
+			w.line(string(splits[i]))
+		}
+		w.buf.Write(splits[len(splits)-1])
+	}
+	return len(buf), nil
+}
+
+func (w *writeLogger) Flush() {
+	buf := w.buf.String()
+	lines := strings.Split(buf, "\n")
+	for _, line := range lines {
+		if len(line) > 0 {
+			w.line(line)
+		}
+	}
+	w.buf.Reset()
 }
