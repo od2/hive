@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"go.od2.network/hive/pkg/auth"
@@ -30,7 +31,8 @@ func (s *Streamer) OpenAssignmentsStream(
 	if err != nil {
 		return nil, err
 	}
-	session, err := s.EvalStartSession(ctx, worker.WorkerID)
+	nowUnix := time.Now().Unix()
+	session, err := s.EvalStartSession(ctx, worker.WorkerID, nowUnix)
 	if err != nil {
 		return nil, err
 	}

@@ -24,17 +24,26 @@ import (
 )
 
 func TestBenchmark(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping benchmarks in short mode")
-	}
-
 	type testCaseDef struct {
-		name string
-		opts *benchOptions
+		name  string
+		short bool
+		opts  *benchOptions
 	}
 	cases := []testCaseDef{
 		{
-			name: "Warmup",
+			name:  "Tiny",
+			short: true,
+			opts: &benchOptions{
+				Options:  DefaultOptions,
+				Workers:  1,
+				Sessions: 1,
+				Assigns:  2,
+				QoS:      4,
+			},
+		},
+		{
+			name:  "Warmup",
+			short: false,
 			opts: &benchOptions{
 				Options:  DefaultOptions,
 				Workers:  32,
@@ -44,7 +53,8 @@ func TestBenchmark(t *testing.T) {
 			},
 		},
 		{
-			name: "Assign100000_Sessions64_Batch512",
+			name:  "Assign100000_Sessions64_Batch512",
+			short: false,
 			opts: &benchOptions{
 				Options: Options{
 					TaskAssignments:        3,
@@ -66,7 +76,8 @@ func TestBenchmark(t *testing.T) {
 			},
 		},
 		{
-			name: "Assign100000_Sessions64_Batch1024",
+			name:  "Assign100000_Sessions64_Batch1024",
+			short: false,
 			opts: &benchOptions{
 				Options: Options{
 					TaskAssignments:        3,
@@ -88,7 +99,8 @@ func TestBenchmark(t *testing.T) {
 			},
 		},
 		{
-			name: "Sessions64_Batch2048",
+			name:  "Assign100000_Sessions64_Batch1024",
+			short: false,
 			opts: &benchOptions{
 				Options: Options{
 					TaskAssignments:        3,
@@ -109,9 +121,35 @@ func TestBenchmark(t *testing.T) {
 				QoS:      2048,
 			},
 		},
+		{
+			name:  "Assign100000_Sessions1024_Batch32",
+			short: false,
+			opts: &benchOptions{
+				Options: Options{
+					TaskAssignments:        3,
+					AssignInterval:         250 * time.Millisecond,
+					AssignBatch:            2048,
+					SessionTimeout:         5 * time.Minute,
+					SessionRefreshInterval: 3 * time.Second,
+					SessionExpireInterval:  10 * time.Second,
+					SessionExpireBatch:     16,
+					TaskTimeout:            time.Minute,
+					TaskExpireInterval:     2 * time.Second,
+					TaskExpireBatch:        128,
+					DeliverBatch:           32,
+				},
+				Workers:  512,
+				Sessions: 2,
+				Assigns:  100000,
+				QoS:      32,
+			},
+		},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			if !testCase.short {
+				t.Skip("Skipping benchmark in short mode")
+			}
 			runBenchmark(t, testCase.opts)
 		})
 	}

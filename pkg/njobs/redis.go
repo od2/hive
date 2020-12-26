@@ -177,13 +177,12 @@ return session_id
 `
 
 // EvalStartSession moves a worker to the active set, giving it tasks.
-func (r *RedisClient) EvalStartSession(ctx context.Context, worker int64) (sessionID int64, err error) {
+func (r *RedisClient) EvalStartSession(ctx context.Context, worker int64, unixNow int64) (sessionID int64, err error) {
 	keys := []string{
 		r.PartitionKeys.SessionSerial,
 		r.PartitionKeys.SessionCount,
 		r.PartitionKeys.SessionExpires,
 	}
-	unixNow := time.Now().Unix()
 	sessionExp := unixNow + int64(r.Options.SessionTimeout.Seconds())
 	return r.startSession.Run(ctx, r.Redis, keys, worker, sessionExp, r.PartitionKeys.WorkerQueuePrefix).Int64()
 }
@@ -402,26 +401,6 @@ func (r *RedisClient) AddSessionQuota(
 		return 0, fmt.Errorf("failed to run addSessionQuota: %w", err)
 	}
 	return res, nil
-}
-
-// RefreshSession resets the TTL of a session.
-// Session owners need to call this regularly like heart beats.
-func (r *RedisClient) RefreshSession(ctx context.Context, worker int64, session int64) error {
-	expireUnix := time.Now().Add(r.Options.SessionTimeout).Unix()
-	var entry [16]byte
-	binary.BigEndian.PutUint64(entry[:8], uint64(worker))
-	binary.BigEndian.PutUint64(entry[8:], uint64(session))
-	count, err := r.Redis.ZAddXX(ctx, r.PartitionKeys.SessionExpires, &redis.Z{
-		Score:  float64(expireUnix),
-		Member: entry,
-	}).Result()
-	if err != nil {
-		return err
-	}
-	if count != 1 {
-		return ErrSessionNotFound
-	}
-	return nil
 }
 
 // assignTasksScript takes in a batch of tasks and distributes it across workers.

@@ -27,6 +27,7 @@ func TestNJobs(t *testing.T) {
 	const topic = "test"
 	const partition = int32(1)
 	const worker1 = int64(1)
+	const unixTime1 = int64(1)
 
 	// Build njobs Redis client.
 	scripts, err := LoadScripts(ctx, rd.Client)
@@ -69,7 +70,7 @@ func TestNJobs(t *testing.T) {
 	require.EqualError(t, err, "rpc error: code = NotFound desc = session not found")
 
 	// Create a new session.
-	sessionID1, err := streamer.EvalStartSession(ctx, worker1)
+	sessionID1, err := streamer.EvalStartSession(ctx, worker1, unixTime1)
 	require.NoError(t, err)
 	t.Logf("Started worker=%d session=%d", worker1, sessionID1)
 
@@ -86,6 +87,20 @@ func TestNJobs(t *testing.T) {
 	// Check that client was moved to active set.
 	require.NoError(t, streamer.Redis.ZScore(ctx, rc.PartitionKeys.ActiveWorkers,
 		redisWorkerKey(worker1)).Err(), "worker not activated")
+
+	// Check the pending assignment count.
+	pending1Res, err := client.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{
+		StreamId: sessionID1,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, pending1Res.Watermark, int32(5))
+
+	// Check the pending assignment count for a non-existent session.
+	pending2Res, err := client.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{
+		StreamId: 9999,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, pending2Res.Watermark, int32(0))
 
 	// Push 16 messages.
 	msgBatch := make([]*sarama.ConsumerMessage, 16)
