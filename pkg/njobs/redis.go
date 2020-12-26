@@ -16,8 +16,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// TODO Rename "inactive workers map" to "worker offsets map"
-
 // FIXME Expired sessions / assignments should become invisible
 
 // PartitionKeys specifies the Redis keys for partition-scoped information.
@@ -33,7 +31,7 @@ type PartitionKeys struct {
 	Progress      string // Int64: Kafka partition offset (global worker offset)
 	TaskAssigns   string // Hash Map: message => no. of assignments
 	ActiveWorkers string // Sorted Set: Active worker offsets
-	IdleWorkers   string // Hash Map: worker => {offset, mode}
+	WorkerOffsets string // Hash Map: worker => offset
 	// Delivery
 	WorkerQueuePrefix string // Prefix for Stream: Worker queue {worker, offset, item}
 	Results           string // Stream: Worker results {worker, offset, item, ok}
@@ -60,7 +58,7 @@ func NewPartitionKeys(topic string, partition int32) PartitionKeys {
 		Progress:      partitionKey(topic, partition, 0x30),
 		TaskAssigns:   partitionKey(topic, partition, 0x31),
 		ActiveWorkers: partitionKey(topic, partition, 0x32),
-		IdleWorkers:   partitionKey(topic, partition, 0x33),
+		WorkerOffsets: partitionKey(topic, partition, 0x33),
 		// Delivery
 		WorkerQueuePrefix: partitionKey(topic, partition, 0x40),
 		Results:           partitionKey(topic, partition, 0x41),
@@ -348,7 +346,7 @@ const addSessionQuotaScript = `
 local key_worker_quota = KEYS[1]
 local key_session_quota = KEYS[2]
 local key_session_expire = KEYS[3]
-local key_idle_workers = KEYS[4]
+local key_worker_offsets = KEYS[4]
 local key_active_workers = KEYS[5]
 -- Arguments
 local worker = ARGV[1]
@@ -364,7 +362,7 @@ end
 redis.call("HINCRBY", key_worker_quota, worker_key, quota)
 local added = redis.call("HINCRBY", key_session_quota, session_key, quota)
 -- Make worker active.
-local offset_bin = redis.call("HGET", key_idle_workers, worker_key)
+local offset_bin = redis.call("HGET", key_worker_offsets, worker_key)
 local offset
 if offset_bin then
   offset = struct.unpack(">l", offset_bin)
@@ -385,7 +383,7 @@ func (r *RedisClient) AddSessionQuota(
 		r.PartitionKeys.WorkerQuota,
 		r.PartitionKeys.SessionQuota,
 		r.PartitionKeys.SessionExpires,
-		r.PartitionKeys.IdleWorkers,
+		r.PartitionKeys.WorkerOffsets,
 		r.PartitionKeys.ActiveWorkers,
 	}
 	res, err := r.addSessionQuota.Run(ctx, r.Redis, keys, worker, session, n).Int64()
@@ -422,7 +420,7 @@ func (r *RedisClient) RefreshSession(ctx context.Context, worker int64, session 
 // 1. String topic offset
 // 2. Hash Map message => tries
 // 3. Sorted Set active worker offsets
-// 4. Hash Map inactive workers
+// 4. Hash Map worker offsets
 // 5. Sorted Set expiration queue
 // Arguments:
 // 1. Number of assignments per task
@@ -441,7 +439,7 @@ const assignTasksScript = `
 local key_progress = KEYS[1]
 local key_message_tries = KEYS[2]
 local key_active_workers = KEYS[3]
-local key_idle_workers = KEYS[4]
+local key_worker_offsets = KEYS[4]
 local key_worker_quota = KEYS[5]
 -- Arguments
 local replicas = ARGV[1]
@@ -468,7 +466,7 @@ for i=4,#ARGV,2 do
     local worker_key = worker_p[1]
     local worker = struct.unpack(">l", worker_key)
     redis.call("ZADD", key_active_workers, offset, worker_key)
-	redis.call("HSET", key_idle_workers, worker_key, offset)
+	redis.call("HSET", key_worker_offsets, worker_key, offset)
     -- Push task to worker queue.
     local key_worker_stream = stream_prefix .. worker_key
     redis.call("XADD", key_worker_stream, tostring(offset) .. "-1",
@@ -507,7 +505,7 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 		r.PartitionKeys.Progress,
 		r.PartitionKeys.TaskAssigns,
 		r.PartitionKeys.ActiveWorkers,
-		r.PartitionKeys.IdleWorkers,
+		r.PartitionKeys.WorkerOffsets,
 		r.PartitionKeys.WorkerQuota,
 	}
 	argv := make([]interface{}, 3+len(batch)*2)
