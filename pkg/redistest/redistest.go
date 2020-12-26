@@ -113,12 +113,18 @@ type writeLogger struct {
 }
 
 func (w *writeLogger) Write(buf []byte) (n int, err error) {
-	w.buf.Write(buf)
-	ln, err := w.buf.ReadString('\n')
-	if err != nil {
-		return 0, err
+	splits := bytes.Split(buf, []byte("\n"))
+	if len(splits) <= 1 {
+		w.buf.Write(buf)
+	} else {
+		w.buf.Write(splits[0])
+		w.line(string(splits[0]))
+		w.buf.Reset()
+		for i := 1; i < len(splits)-1; i++ {
+			w.line(string(splits[i]))
+		}
+		w.buf.Write(splits[len(splits)-1])
 	}
-	w.line(ln[:len(ln)-1])
 	return len(buf), nil
 }
 

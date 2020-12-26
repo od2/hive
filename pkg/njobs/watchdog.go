@@ -27,7 +27,7 @@ func (w *Watchdog) Run(ctx context.Context) error {
 func (w *Watchdog) step(ctx context.Context) error {
 	maxSleep, err := w.evalSessionExpire(ctx, time.Now().Unix(), int64(w.Options.SessionExpireBatch))
 	if err != nil {
-		return fmt.Errorf("failed to run expiration algorithm: %w", err)
+		return fmt.Errorf("failed to run session expire script: %w", err)
 	}
 	var sleep time.Duration
 	if maxSleep > w.Options.TaskExpireInterval {

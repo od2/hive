@@ -84,7 +84,7 @@ var DefaultOptions = Options{
 	// NAssign algorithm
 	TaskAssignments: 3,
 	AssignInterval:  250 * time.Millisecond,
-	AssignBatch:     128,
+	AssignBatch:     2048,
 	// Session tracking
 	SessionTimeout:         5 * time.Minute,
 	SessionRefreshInterval: 3 * time.Second,
@@ -94,5 +94,5 @@ var DefaultOptions = Options{
 	TaskTimeout:        time.Minute,
 	TaskExpireInterval: 2 * time.Second,
 	TaskExpireBatch:    128,
-	DeliverBatch:       16,
+	DeliverBatch:       2048,
 }

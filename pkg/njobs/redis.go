@@ -164,8 +164,8 @@ local stream_prefix = ARGV[3]
 local worker_key = struct.pack(">l", worker)
 local session_id = redis.call("HINCRBY", key_session_serial, worker_key, 1)
 local session_count = redis.call("HINCRBY", key_session_count, worker_key, 1)
-redis.log(redis.LOG_VERBOSE,
-  string.format("njobs:add_session(%d) => id=%d total=%d", worker, session_id, session_count))
+-- redis.log(redis.LOG_VERBOSE,
+--  string.format("njobs:add_session(%d) => id=%d total=%d", worker, session_id, session_count))
 if session_count == 1 then
   -- First session has to allocate worker queue.
   redis.log(redis.LOG_VERBOSE, string.format("njobs:add_worker(%d)", worker))
@@ -254,7 +254,8 @@ local function remove_session (worker, session)
   local session_key = struct.pack(">ll", worker, session)
   local deleted = redis.call("ZREM", key_session_expires, session_key)
   local num_sessions = redis.call("HINCRBY", key_session_count, worker_key, -1)
-  redis.log(redis.LOG_VERBOSE, string.format("njobs:remove_session(%d, %d) => total=%d", worker, session, num_sessions))
+  -- redis.log(redis.LOG_VERBOSE,
+  --  string.format("njobs:remove_session(%d, %d) => total=%d", worker, session, num_sessions))
   redis.call("HDEL", key_session_quota, session_key)
   -- Ideally we also dead-letter the stream pending entries assigned to this session,
   -- but the remaining task expire workers will catch those anyways.
@@ -284,7 +285,7 @@ elseif mode == 1 then
   -- Get time of next expiry
   local next_expiry_entry = redis.call("ZRANGE", key_session_expires, 0, 0, "WITHSCORES")
   local next_expiry = 0
-  if next_expiry_entry then
+  if #next_expiry_entry >= 2 then
     next_expiry = next_expiry_entry[2]
   end
   return next_expiry
@@ -372,9 +373,12 @@ local offset
 if offset_bin then
   offset = struct.unpack(">l", offset_bin)
 else
-  offset = 0
+  offset = -1
+  redis.call("HSET", key_worker_offsets, worker_key, struct.pack(">l", -1))
+  redis.log(redis.LOG_VERBOSE, string.format("njobs: worker_first_task worker=%d", worker))
 end
 redis.call("ZADD", key_active_workers, offset, worker_key)
+-- redis.log(redis.LOG_DEBUG, string.format("njobs:add_session_quota(%d, %d, %d)", worker, session, quota))
 return added
 `
 
@@ -453,40 +457,57 @@ local stream_prefix = ARGV[3]
 
 -- Loop through messages
 local progress = tonumber(redis.call("GET", key_progress) or 0)
-for i=4,#ARGV,2 do
-  local offset = tonumber(ARGV[i])
-  local item = ARGV[i+1]
-  if offset < progress then
-    -- Kafka consumer is behind Redis state.
-    return {progress, "ERR_SEEK"}
-  end
-  -- Assign each message N times
-  local tries = redis.call("HINCRBY", key_message_tries, offset, 1)
-  for j=tries,replicas,1 do
-    -- Assign task to worker with lowest progress, and update progress.
-    local worker_p = redis.call("ZPOPMIN", key_active_workers)
-    if #worker_p == 0 then
-      return {progress, "ERR_NO_WORKERS"}
+local assigns = 0
+
+local function run ()
+  for i=4,#ARGV,2 do
+    local offset = tonumber(ARGV[i])
+    local item = ARGV[i+1]
+    if offset < progress then
+      -- Kafka consumer is behind Redis state.
+      return "ERR_SEEK"
     end
-    local worker_key = worker_p[1]
-    redis.call("ZADD", key_active_workers, offset, worker_key)
-	redis.call("HSET", key_worker_offsets, worker_key, offset)
-    -- Push task to worker queue.
-    local key_worker_stream = stream_prefix .. worker_key
-    redis.call("XADD", key_worker_stream, tostring(offset) .. "-1",
-      "exp_time", exp_time, "item", item)
-    -- Consume worker quota, and pause worker if out of quota.
-    local worker_quota = redis.call("HINCRBY", key_worker_quota, worker_key, -1)
-    if worker_quota <= 0 then
-      redis.call("ZREM", key_active_workers, worker_key)
+    -- Assign each message N times
+    local tries = redis.call("HINCRBY", key_message_tries, offset, 1)
+    for j=tries,replicas,1 do
+      -- Pop worker with lowest progress.
+      local worker_p = redis.call("ZPOPMIN", key_active_workers)
+      if #worker_p == 0 then
+        return "ERR_NO_WORKERS"
+      end
+      local worker_key = worker_p[1]
+      local worker_progress = tonumber(worker_p[2])
+      -- Check if this worker is already ahead of message.
+      -- This happens either if Kafka rewinds or there are less workers than task assignment replicas.
+      if worker_progress >= offset then
+        redis.call("ZADD", key_active_workers, worker_progress, worker_key)
+        return "ERR_NO_WORKERS"
+      end
+      -- Update worker progress.
+      redis.call("ZADD", key_active_workers, offset, worker_key)
+      redis.call("HSET", key_worker_offsets, worker_key, struct.pack(">l", offset))
+      -- Push task to worker queue.
+      local key_worker_stream = stream_prefix .. worker_key
+      redis.call("XADD", key_worker_stream, tostring(offset) .. "-1",
+        "exp_time", exp_time, "item", item)
+      assigns = assigns + 1
+      -- Consume worker quota, and pause worker if out of quota.
+      local worker_quota = redis.call("HINCRBY", key_worker_quota, worker_key, -1)
+      if worker_quota <= 0 then
+        redis.call("ZREM", key_active_workers, worker_key)
+      end
     end
+    -- Move forward progress.
+    progress = offset
+    redis.call("HDEL", key_message_tries, offset)
+    redis.call("SET", key_progress, offset)
   end
-  -- Move forward progress.
-  progress = offset
-  redis.call("HDEL", key_message_tries, offset)
-  redis.call("SET", key_progress, offset)
+  return "OK"
 end
-return {progress, "OK"}
+
+local err = run()
+redis.log(redis.LOG_VERBOSE, string.format("njobs:assign_tasks() => progress=%d assigns=%d", progress, assigns))
+return {progress, assigns, err}
 `
 
 // Assignment marks an incoming Kafka message matched to a worker.
@@ -512,12 +533,21 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 		r.PartitionKeys.WorkerOffsets,
 		r.PartitionKeys.WorkerQuota,
 	}
+	// Assemble the arguments.
 	argv := make([]interface{}, 3+len(batch)*2)
 	argv[0] = int64(r.TaskAssignments)
 	argv[1] = expireAt
 	argv[2] = r.PartitionKeys.WorkerQueuePrefix
 	offsetsMap := make(map[int64]*sarama.ConsumerMessage)
+	lastOffset := int64(-1)
 	for i, msg := range batch {
+		// Offset has to be strictly monotonically increasing!
+		// Violating this is going to stall the pipeline.
+		if lastOffset >= msg.Offset {
+			return 0, fmt.Errorf("offsets in batch at %d are not strictly monotonically increasing: "+
+				"got %d, previous %d", i, msg.Offset, lastOffset)
+		}
+		lastOffset = msg.Offset
 		argv[3+i*2] = msg.Offset
 		argv[3+(i*2)+1] = msg.Key
 		offsetsMap[msg.Offset] = msg
@@ -531,19 +561,24 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 	if !ok {
 		return 0, fmt.Errorf("unexpected res: %#v", res)
 	}
-	if len(resSlice) != 2 {
+	if len(resSlice) != 3 {
 		return 0, fmt.Errorf("unexpected res len: %d", len(resSlice))
 	}
 	newOffset, ok := resSlice[0].(int64)
 	if !ok {
 		return 0, fmt.Errorf("unexpected res[0]: %#v", resSlice[0])
 	}
-	status, ok := resSlice[1].(string)
+	count, ok := resSlice[1].(int64)
+	if !ok {
+		return 0, fmt.Errorf("unexpected res[1]: %#v", resSlice[1])
+	}
+	_ = count // TODO export to metrics
+	retCode, ok := resSlice[2].(string)
 	if !ok {
 		return 0, fmt.Errorf("unexpected res[1]: %#v", resSlice[2])
 	}
 	var retErr error
-	switch status {
+	switch retCode {
 	case "OK":
 		retErr = nil
 	case "ERR_SEEK":
@@ -551,7 +586,7 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 	case "ERR_NO_WORKERS":
 		retErr = ErrNoWorkers
 	default:
-		retErr = fmt.Errorf("unknown error code: %s", status)
+		retErr = fmt.Errorf("unknown error code: %s", retCode)
 	}
 	return newOffset, retErr
 }
