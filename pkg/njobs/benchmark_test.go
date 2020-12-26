@@ -24,8 +24,8 @@ import (
 )
 
 func TestBenchmark(t *testing.T) {
-	if !runHeavyTests {
-		t.Skip("Heavy tests disabled")
+	if testing.Short() {
+		t.Skip("Skipping benchmarks in short mode")
 	}
 
 	type testCaseDef struct {

@@ -2,10 +2,8 @@ package njobs
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net"
-	"os"
 	"testing"
 
 	"github.com/Shopify/sarama"
@@ -18,14 +16,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 )
-
-var runHeavyTests bool
-
-func TestMain(m *testing.M) {
-	flag.BoolVar(&runHeavyTests, "heavy", false, "Run heavy tests")
-	flag.Parse()
-	os.Exit(m.Run())
-}
 
 func TestNJobs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
