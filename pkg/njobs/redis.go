@@ -24,14 +24,17 @@ type PartitionKeys struct {
 	SessionSerial  string // Hash Map: worker => session serial number
 	SessionCount   string // Int64: Number of active sessions per worker
 	SessionExpires string // Sorted Set: {worker, session} by exp_time
+
 	// Flow control
 	WorkerQuota  string // Hash Map: Remaining message limit per worker
 	SessionQuota string // Hash Map: Remaining message limit per session
+
 	// NAssign algorithm
 	Progress      string // Int64: Kafka partition offset (global worker offset)
 	TaskAssigns   string // Hash Map: message => no. of assignments
 	ActiveWorkers string // Sorted Set: Active worker offsets
 	WorkerOffsets string // Hash Map: worker => offset
+
 	// Delivery
 	WorkerQueuePrefix string // Prefix for Stream: Worker queue {worker, offset, item}
 	Results           string // Stream: Worker results {worker, offset, item, ok}
@@ -267,17 +270,19 @@ if mode == 0 then
   local session = tonumber(ARGV[4])
   return remove_session(worker, session)
 elseif mode == 1 then
-  local time = ARGV[3]
-  local limit = ARGV[4]
+  local time = tonumber(ARGV[3])
+  local limit = tonumber(ARGV[4])
   -- Pop expired items
   local expired = redis.call("ZRANGEBYSCORE", key_session_expires, "-inf", time-1, "LIMIT", 0, limit)
-  redis.call("ZREM", expired)
+  if #expired > 0 then
+    redis.call("ZREM", key_session_expires, unpack(expired))
+  end
   for i,session_key in ipairs(expired) do
     local worker, session = struct.unpack(">ll", session_key)
     remove_session(worker, session)
   end
   -- Get time of next expiry
-  local next_expiry_entry = redis.call("ZRANGE", key_expire, 0, 0, "WITHSCORES")
+  local next_expiry_entry = redis.call("ZRANGE", key_session_expires, 0, 0, "WITHSCORES")
   local next_expiry = 0
   if next_expiry_entry then
     next_expiry = next_expiry_entry[2]
@@ -447,7 +452,7 @@ local exp_time = ARGV[2]
 local stream_prefix = ARGV[3]
 
 -- Loop through messages
-local progress = redis.call("GET", key_progress) or 0
+local progress = tonumber(redis.call("GET", key_progress) or 0)
 for i=4,#ARGV,2 do
   local offset = tonumber(ARGV[i])
   local item = ARGV[i+1]
@@ -464,7 +469,6 @@ for i=4,#ARGV,2 do
       return {progress, "ERR_NO_WORKERS"}
     end
     local worker_key = worker_p[1]
-    local worker = struct.unpack(">l", worker_key)
     redis.call("ZADD", key_active_workers, offset, worker_key)
 	redis.call("HSET", key_worker_offsets, worker_key, offset)
     -- Push task to worker queue.
@@ -509,7 +513,7 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 		r.PartitionKeys.WorkerQuota,
 	}
 	argv := make([]interface{}, 3+len(batch)*2)
-	argv[0] = int64(r.N)
+	argv[0] = int64(r.TaskAssignments)
 	argv[1] = expireAt
 	argv[2] = r.PartitionKeys.WorkerQueuePrefix
 	offsetsMap := make(map[int64]*sarama.ConsumerMessage)
@@ -525,18 +529,18 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 	}
 	resSlice, ok := res.([]interface{})
 	if !ok {
-		return 0, fmt.Errorf("unexpected res type: %T", res)
+		return 0, fmt.Errorf("unexpected res: %#v", res)
 	}
 	if len(resSlice) != 2 {
 		return 0, fmt.Errorf("unexpected res len: %d", len(resSlice))
 	}
 	newOffset, ok := resSlice[0].(int64)
 	if !ok {
-		return 0, fmt.Errorf("unexpected res[0] type: %T", resSlice[0])
+		return 0, fmt.Errorf("unexpected res[0]: %#v", resSlice[0])
 	}
 	status, ok := resSlice[1].(string)
 	if !ok {
-		return 0, fmt.Errorf("unexpected res[1] type: %T", resSlice[2])
+		return 0, fmt.Errorf("unexpected res[1]: %#v", resSlice[2])
 	}
 	var retErr error
 	switch status {
@@ -582,6 +586,9 @@ end
 -- Loop through all expired items on the stream 
 while true do
   local msgs = redis.call("XRANGE", key_worker_stream, "-", "+", "COUNT", batch)
+  if #msgs <= 0 then
+    return 0
+  end
   for i,msg in ipairs(msgs) do
     local kvps = parse_kvps(msg[2])
     local exp_time = tonumber(kvps["exp_time"])
@@ -596,7 +603,6 @@ while true do
     end
   end
 end
-return 0
 `
 
 // Expiration marks a worker task assignment as expired.

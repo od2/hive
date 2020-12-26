@@ -72,6 +72,7 @@ func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 	s := assignerState{
 		Assigner: a,
 		session:  session,
+		claim:    claim,
 		r:        r,
 	}
 	// Start consumer loop.

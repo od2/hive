@@ -2,6 +2,7 @@ package njobs
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -72,6 +73,26 @@ func (s *Streamer) WantAssignments(
 	}, nil
 }
 
+func (s *Streamer) GetPendingAssignmentsCount(
+	ctx context.Context,
+	req *types.GetPendingAssignmentsCountRequest,
+) (*types.PendingAssignmentsCount, error) {
+	worker, err := auth.FromGRPCContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var sessionKey [16]byte
+	binary.BigEndian.PutUint64(sessionKey[:8], uint64(worker.WorkerID))
+	binary.BigEndian.PutUint64(sessionKey[8:], uint64(req.StreamId))
+	count, err := s.Redis.HGet(ctx, s.PartitionKeys.SessionQuota, string(sessionKey[:])).Int64()
+	if errors.Is(err, redis.Nil) {
+		count = 0
+	} else if err != nil {
+		return nil, err
+	}
+	return &types.PendingAssignmentsCount{Watermark: int32(count)}, nil
+}
+
 // StreamAssignments sends task assignments from the server to the client.
 func (s *Streamer) StreamAssignments(
 	req *types.StreamAssignmentsRequest,
@@ -116,8 +137,6 @@ func (s *Streamer) StreamAssignments(
 			if err := outStream.Send(&types.AssignmentBatch{Assignments: batch}); err != nil {
 				return err
 			}
-		default:
-			break // continue
 		}
 	}
 }

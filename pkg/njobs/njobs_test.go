@@ -38,7 +38,7 @@ func TestNJobs(t *testing.T) {
 		Scripts:       scripts,
 	}
 	*rc.Options = DefaultOptions
-	rc.Options.N = 1
+	rc.Options.TaskAssignments = 1
 	// Build task streamer server.
 	streamer := Streamer{
 		RedisClient: &rc,

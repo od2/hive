@@ -63,9 +63,9 @@ import "time"
 // Options stores global settings.
 type Options struct {
 	// NAssign algorithm
-	N              uint          // assignments per task´
-	AssignInterval time.Duration // assign/flush interval
-	AssignBatch    uint          // size of message to distribute to workers
+	TaskAssignments uint          // assignments per task
+	AssignInterval  time.Duration // assign/flush interval
+	AssignBatch     uint          // size of message to distribute to workers
 	// Session tracking
 	SessionTimeout         time.Duration // session TTL, i.e. time until a session without heart beats gets dropped
 	SessionRefreshInterval time.Duration // refresh session interval
@@ -82,9 +82,9 @@ type Options struct {
 // Only pass by value, not reference, to avoid modifying this globally.
 var DefaultOptions = Options{
 	// NAssign algorithm
-	N:              3,
-	AssignInterval: 250 * time.Millisecond,
-	AssignBatch:    128,
+	TaskAssignments: 3,
+	AssignInterval:  250 * time.Millisecond,
+	AssignBatch:     128,
 	// Session tracking
 	SessionTimeout:         5 * time.Minute,
 	SessionRefreshInterval: 3 * time.Second,

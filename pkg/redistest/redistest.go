@@ -28,7 +28,7 @@ type Redis struct {
 }
 
 // NewRedis starts an ephemeral Redis server and returns a client.
-func NewRedis(ctx context.Context, t *testing.T) *Redis {
+func NewRedis(ctx context.Context, t testing.TB) *Redis {
 	dir, err := ioutil.TempDir("", "redis-")
 	if err != nil {
 		panic("failed to get temp dir: " + err.Error())
