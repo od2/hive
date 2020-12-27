@@ -30,7 +30,7 @@ type PartitionKeys struct {
 	SessionQuota string // Hash Map: Remaining message limit per session
 
 	// NAssign algorithm
-	Progress      string // Int64: Kafka partition offset (global worker offset)
+	Offset        string // Int64: Kafka partition offset (global worker offset)
 	TaskAssigns   string // Hash Map: message => no. of assignments
 	ActiveWorkers string // Sorted Set: Active worker offsets
 	WorkerOffsets string // Hash Map: worker => offset
@@ -58,7 +58,7 @@ func NewPartitionKeys(topic string, partition int32) PartitionKeys {
 		WorkerQuota:  partitionKey(topic, partition, 0x20),
 		SessionQuota: partitionKey(topic, partition, 0x21),
 		// N-Assign
-		Progress:      partitionKey(topic, partition, 0x30),
+		Offset:        partitionKey(topic, partition, 0x30),
 		TaskAssigns:   partitionKey(topic, partition, 0x31),
 		ActiveWorkers: partitionKey(topic, partition, 0x32),
 		WorkerOffsets: partitionKey(topic, partition, 0x33),
@@ -336,7 +336,7 @@ func (r *RedisClient) evalSessionExpire(ctx context.Context, now int64, limit in
 	}
 	var waitTime time.Duration
 	if nextExpiry == 0 {
-		waitTime = -1
+		waitTime = r.SessionTimeout // if no items, safe to sleep for full TTL
 	} else if nextExpiry <= now {
 		waitTime = 0
 	} else {
@@ -506,7 +506,7 @@ var (
 func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.ConsumerMessage) (int64, error) {
 	expireAt := time.Now().Add(r.TaskTimeout).Unix()
 	keys := []string{
-		r.PartitionKeys.Progress,
+		r.PartitionKeys.Offset,
 		r.PartitionKeys.TaskAssigns,
 		r.PartitionKeys.ActiveWorkers,
 		r.PartitionKeys.WorkerOffsets,
@@ -722,6 +722,12 @@ func (r *RedisClient) EvalCommitRead(ctx context.Context, worker int64, session 
 		return nil
 	}
 	return err
+}
+
+// GetOffset fetches the current Kafka offset of the assigner.
+// It returns redis.Nil when no offset is known.
+func (r *RedisClient) GetOffset(ctx context.Context) (int64, error) {
+	return r.Redis.Get(ctx, r.PartitionKeys.Offset).Int64()
 }
 
 // Session interfaces with a worker session.

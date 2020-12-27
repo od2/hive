@@ -9,8 +9,12 @@ require (
 	github.com/golang/protobuf v1.4.2
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jmoiron/sqlx v1.2.1-0.20201120164427-00c6e74d816a
+	github.com/pelletier/go-toml v1.8.1
 	github.com/rs/xid v1.2.1
+	github.com/spf13/cobra v1.1.1
+	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.6.1
+	go.uber.org/zap v1.10.0
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	google.golang.org/grpc v1.34.0
 	google.golang.org/protobuf v1.25.0

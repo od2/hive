@@ -7,52 +7,31 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/go-redis/redis/v8"
 )
 
-// Assigner implements a Kafka consumer group member to process tasks.
+// Assigner implements a Kafka consumer to process tasks.
 //
-// It assigns each tasks to one or more workers.
-// Assignments get written to the "Assignments" channel.
+// The Assigner coordinates with Streamers via Redis for assigning tasks to currently active workers.
+// Assignments get written to the respective Redis streams.
 //
-// Internally, it reads in a batches of items from Kafka,
+// It also runs an embedded Watchdog background routine for cleaning up stalled streams.
+//
+// Internally, it reads in a batches of items from a Kafka partition,
 // then assigns them to as much Redis workers as possible.
-//
-// It also runs a Watchdog background routine.
+// The offset is stored in Redis (not Kafka), starting from the earliest message.
 type Assigner struct {
-	Redis   *redis.Client
-	Options *Options
-}
-
-// Setup checks Redis connectivity.
-func (a *Assigner) Setup(_ sarama.ConsumerGroupSession) error {
-	return a.Redis.Ping(context.TODO()).Err()
-}
-
-// Cleanup does nothing.
-func (a *Assigner) Cleanup(_ sarama.ConsumerGroupSession) error {
-	return nil
+	RedisClient *RedisClient
+	Options     *Options
 }
 
 // ConsumeClaim starts streaming messages from Kafka in batches.
 // The algorithm throttles Kafka consumption to match the speed at which nqueue workers consume.
-func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+func (a *Assigner) Run(msgs <-chan *sarama.ConsumerMessage) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// Build njobs Redis client.
-	scripts, err := LoadScripts(ctx, a.Redis)
-	if err != nil {
-		return fmt.Errorf("failed to load scripts: %w", err)
-	}
-	r := &RedisClient{
-		Redis:         a.Redis,
-		Options:       a.Options,
-		PartitionKeys: NewPartitionKeys(claim.Topic(), claim.Partition()),
-		Scripts:       scripts,
-	}
 	// Start watchdog background routine and listen for error.
 	watchdog := Watchdog{
-		RedisClient: r,
+		RedisClient: a.RedisClient,
 		Options:     a.Options,
 	}
 	watchdogErrC := make(chan error, 1)
@@ -71,9 +50,7 @@ func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 	// Build Redis nqueue assigner state.
 	s := assignerState{
 		Assigner: a,
-		session:  session,
-		claim:    claim,
-		r:        r,
+		r:        a.RedisClient,
 	}
 	// Start consumer loop.
 loop:
@@ -83,7 +60,7 @@ loop:
 			if err != nil {
 				return fmt.Errorf("error from watchdog: %w", err)
 			}
-		case msg, ok := <-claim.Messages():
+		case msg, ok := <-msgs:
 			if !ok {
 				break loop
 			}
@@ -104,10 +81,8 @@ loop:
 
 type assignerState struct {
 	*Assigner
-	session sarama.ConsumerGroupSession
-	claim   sarama.ConsumerGroupClaim
-	r       *RedisClient
-	window  []*sarama.ConsumerMessage // unacknowledged messages
+	r      *RedisClient
+	window []*sarama.ConsumerMessage // unacknowledged messages
 }
 
 // flush loops doing flush attempts until all messages are assigned.
@@ -161,8 +136,5 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 	for len(s.window) > 0 && s.window[0].Offset <= lastOffset {
 		s.window = s.window[1:]
 	}
-	// Commit offset to Kafka.
-	s.session.MarkOffset(s.claim.Topic(), s.claim.Partition(), lastOffset+1, "")
-	s.session.Commit()
 	return
 }

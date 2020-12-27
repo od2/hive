@@ -12,12 +12,10 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/redistest"
-	"go.od2.network/hive/pkg/saramamock"
 	"go.od2.network/hive/pkg/token"
 	"go.od2.network/hive/pkg/types"
 	"google.golang.org/grpc"
@@ -175,8 +173,6 @@ type benchStack struct {
 	T           *testing.T
 	Redis       *redistest.Redis
 	RedisClient *RedisClient
-	Session     *saramamock.ConsumerGroupSession
-	Claim       *saramamock.ConsumerGroupClaim
 	opts        *benchOptions
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -196,41 +192,21 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	ctx, cancel := context.WithCancel(context.Background())
 	redis := redistest.NewRedis(ctx, t)
 	innerCtx, innerCancel := context.WithCancel(ctx)
-	// Build fake Kafka consumer session.
-	session := &saramamock.ConsumerGroupSession{MContext: innerCtx}
-	claim := &saramamock.ConsumerGroupClaim{
-		MTopic:               opts.Topic,
-		MPartition:           opts.Partition,
-		MInitialOffset:       0,
-		MHighWaterMarkOffset: 0,
-	}
-	claim.Init()
-	msgCount := int64(0)
-	claim.NextMessage = func() *sarama.ConsumerMessage {
-		msg := &sarama.ConsumerMessage{
-			Timestamp: time.Now(),
-			Key:       []byte(strconv.FormatUint(uint64(0x100)+uint64(msgCount), 16)),
-			Value:     nil,
-			Topic:     claim.MTopic,
-			Partition: claim.MPartition,
-			Offset:    msgCount * 16,
-		}
-		msgCount++
-		return msg
-	}
+	const topic, partition = "test", int32(2)
+
 	// Build njobs Redis client.
 	scripts, err := LoadScripts(ctx, redis.Client)
 	require.NoError(t, err)
 	rc := &RedisClient{
 		Redis:         redis.Client,
 		Options:       &opts.Options,
-		PartitionKeys: NewPartitionKeys(claim.MTopic, claim.MPartition),
+		PartitionKeys: NewPartitionKeys(topic, partition),
 		Scripts:       scripts,
 	}
 	// Build assigner.
 	assigner := &Assigner{
-		Redis:   redis.Client,
-		Options: &opts.Options,
+		RedisClient: rc,
+		Options:     &opts.Options,
 	}
 	// Build streamer.
 	streamer := &Streamer{
@@ -259,8 +235,6 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 		T:           t,
 		Redis:       redis,
 		RedisClient: rc,
-		Session:     session,
-		Claim:       claim,
 		signer:      signer,
 		opts:        opts,
 		ctx:         ctx,
@@ -280,23 +254,37 @@ func runBenchmark(t *testing.T, opts *benchOptions) {
 	stack := newBenchStack(t, opts)
 	defer stack.cancel()
 	var wg sync.WaitGroup
-	// Run message generator.
+	// Build fake Kafka message stream.
+	msgs := make(chan *sarama.ConsumerMessage)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer stack.innerCancel()
-		err := stack.Claim.Run(stack.innerCtx)
-		require.EqualError(t, err, "context canceled", "mock sarama claim failed")
+		msgCount := int64(0)
+		for {
+			msg := &sarama.ConsumerMessage{
+				Timestamp: time.Now(),
+				Key:       []byte(strconv.FormatUint(uint64(0x100)+uint64(msgCount), 16)),
+				Value:     nil,
+				Topic:     "test",
+				Partition: 2,
+				Offset:    msgCount * 16,
+			}
+			msgCount++
+			select {
+			case <-stack.innerCtx.Done():
+				return
+			case msgs <- msg:
+				break // continue
+			}
+		}
 	}()
 	// Run task assigner.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer stack.innerCancel()
-		require.NoError(t, stack.assigner.Setup(stack.Session))
-		err := stack.assigner.ConsumeClaim(stack.Session, stack.Claim)
+		err := stack.assigner.Run(msgs)
 		t.Log("Sarama claim consumer exited with:", err)
-		assert.NoError(t, stack.assigner.Cleanup(stack.Session))
 	}()
 	// Start streamer server.
 	wg.Add(1)

@@ -8,7 +8,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
-	"go.od2.network/hive/pkg/db"
+	"go.od2.network/hive/pkg/items"
 	"go.od2.network/hive/pkg/redisdedup"
 	"go.od2.network/hive/pkg/types"
 )
@@ -19,7 +19,7 @@ type Worker struct {
 	MaxDelay  time.Duration
 	BatchSize uint
 
-	ItemStore *db.ItemStore
+	ItemStore *items.Store
 	KafkaSink *KafkaSink
 }
 
