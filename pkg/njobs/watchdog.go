@@ -32,9 +32,6 @@ func (w *Watchdog) step(ctx context.Context) error {
 	var sleep time.Duration
 	if wantSleep > w.Options.SessionExpireInterval {
 		sleep = w.Options.SessionExpireInterval
-	} else if wantSleep <= 0 {
-		// No items => sleep for whole TTL duration.
-		wantSleep = w.Options.SessionTimeout
 	} else {
 		sleep = wantSleep
 	}

@@ -336,7 +336,7 @@ func (r *RedisClient) evalSessionExpire(ctx context.Context, now int64, limit in
 	}
 	var waitTime time.Duration
 	if nextExpiry == 0 {
-		waitTime = -1
+		waitTime = r.SessionTimeout // if no items, safe to sleep for full TTL
 	} else if nextExpiry <= now {
 		waitTime = 0
 	} else {
