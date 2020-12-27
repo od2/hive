@@ -14,6 +14,15 @@ var rootCmd = cobra.Command{
 	Short: "od2/hive server",
 
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if configPath == "" {
+			_, _ = fmt.Fprintln(os.Stderr, "No config path given")
+			os.Exit(1)
+		}
+		viper.SetConfigFile(configPath)
+		viper.SetConfigType("toml")
+		if err := viper.ReadInConfig(); err != nil {
+			panic("Failed to read config: " + err.Error())
+		}
 		var logConfig zap.Config
 		if devMode {
 			logConfig = zap.NewDevelopmentConfig()
@@ -39,15 +48,6 @@ func init() {
 }
 
 func main() {
-	if configPath == "" {
-		_, _ = fmt.Fprintln(os.Stderr, "No config path given")
-		os.Exit(1)
-	}
-	viper.SetConfigFile(configPath)
-	viper.SetConfigType("toml")
-	if err := viper.ReadInConfig(); err != nil {
-		panic("Failed to read config: " + err.Error())
-	}
 	if err := rootCmd.Execute(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err.Error())
 	}
