@@ -35,6 +35,14 @@ const (
 
 	ConfSaramaAddrs      = "sarama.addrs"
 	ConfSaramaConfigFile = "sarama.config_file"
+
+	ConfMySQLDSN = "mysql.dsn"
+
+	ConfAuthgwSecret         = "authgw.secret"
+	ConfAuthgwCacheSize      = "authgw.cache.size"
+	ConfAuthgwCacheTTL       = "authgw.cache.ttl"
+	ConfAuthgwCacheStreamKey = "authgw.cache.stream_key"
+	ConfAuthgwCacheBacklog   = "authgw.cache.backlog"
 )
 
 func init() {
@@ -58,6 +66,15 @@ func init() {
 	viper.SetDefault(ConfNJobsDeliverBatch, uint(2048))
 
 	viper.SetDefault(ConfSaramaAddrs, []string{})
+	viper.SetDefault(ConfSaramaConfigFile, "")
+
+	viper.SetDefault(ConfMySQLDSN, "")
+
+	viper.SetDefault(ConfAuthgwSecret, "")
+	viper.SetDefault(ConfAuthgwCacheSize, 1024)
+	viper.SetDefault(ConfAuthgwCacheTTL, time.Hour)
+	viper.SetDefault(ConfAuthgwCacheStreamKey, "token-invalidations")
+	viper.SetDefault(ConfAuthgwCacheBacklog, 64)
 }
 
 func redisClientFromEnv() *redis.Client {

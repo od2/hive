@@ -99,8 +99,9 @@ type CacheInvalidation struct {
 	Redis *redis.Client
 
 	StreamKey string // Redis key
-	StreamID  string // ID of last message
 	Backlog   int64  // Number of invalidations to keep
+
+	streamID string // ID of last message
 }
 
 // Run applies cache invalidations from Redis Streams.
@@ -113,8 +114,11 @@ func (i *CacheInvalidation) Run(ctx context.Context) error {
 }
 
 func (i *CacheInvalidation) read(ctx context.Context) error {
+	if i.streamID == "" {
+		i.streamID = "0"
+	}
 	streams, err := i.Redis.XRead(ctx, &redis.XReadArgs{
-		Streams: []string{i.StreamKey, i.StreamID},
+		Streams: []string{i.StreamKey, i.streamID},
 		Count:   128,
 		Block:   time.Second,
 	}).Result()
@@ -125,7 +129,7 @@ func (i *CacheInvalidation) read(ctx context.Context) error {
 		return nil
 	}
 	for _, msg := range streams[0].Messages {
-		i.StreamID = msg.ID
+		i.streamID = msg.ID
 		idStr, ok := msg.Values["id"].(string)
 		if !ok {
 			continue
