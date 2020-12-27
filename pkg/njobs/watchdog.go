@@ -25,15 +25,18 @@ func (w *Watchdog) Run(ctx context.Context) error {
 }
 
 func (w *Watchdog) step(ctx context.Context) error {
-	maxSleep, err := w.evalSessionExpire(ctx, time.Now().Unix(), int64(w.Options.SessionExpireBatch))
+	wantSleep, err := w.evalSessionExpire(ctx, time.Now().Unix(), int64(w.Options.SessionExpireBatch))
 	if err != nil {
 		return fmt.Errorf("failed to run session expire script: %w", err)
 	}
 	var sleep time.Duration
-	if maxSleep > w.Options.TaskExpireInterval {
-		sleep = w.Options.TaskExpireInterval
+	if wantSleep > w.Options.SessionExpireInterval {
+		sleep = w.Options.SessionExpireInterval
+	} else if wantSleep <= 0 {
+		// No items => sleep for whole TTL duration.
+		wantSleep = w.Options.SessionTimeout
 	} else {
-		sleep = maxSleep
+		sleep = wantSleep
 	}
 	timer := time.NewTimer(sleep)
 	defer timer.Stop()

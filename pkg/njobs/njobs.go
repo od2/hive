@@ -73,7 +73,7 @@ type Options struct {
 	SessionExpireBatch     uint          // max sessions to expire at once
 	// Event streaming
 	TaskTimeout        time.Duration // in-flight assignment TTL, i.e. time given to worker to complete each task
-	TaskExpireInterval time.Duration // max task expire interval (runs sooner by default)
+	TaskExpireInterval time.Duration // max task expire interval (runs sooner by default) // TODO unused
 	TaskExpireBatch    uint          // max assignments to expire at once
 	DeliverBatch       uint          // max assignments in one gRPC server-side event
 }
