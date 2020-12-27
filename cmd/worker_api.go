@@ -69,6 +69,9 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 			log.Error("Failed to MySQL client", zap.Error(err))
 		}
 	}()
+	if err := db.Ping(); err != nil {
+		log.Fatal("Failed to ping DB", zap.Error(err))
+	}
 	// Build auth gateway.
 	backend := authgw.Database{DB: db}
 	cachedBackend, err := authgw.NewCache(&backend,
