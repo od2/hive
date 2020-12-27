@@ -1,11 +1,12 @@
 package main
 
 import (
+	"os"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
+	"github.com/pelletier/go-toml"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/njobs"
 	"go.uber.org/zap"
@@ -109,7 +110,13 @@ func saramaClientFromEnv() sarama.Client {
 	log.Info("Reading sarama config",
 		zap.String(ConfSaramaConfigFile, configFilePath))
 	config := new(sarama.Config)
-	if _, err := toml.DecodeFile(configFilePath, config); err != nil {
+	f, err := os.Open(configFilePath)
+	if err != nil {
+		log.Fatal("Failed to open sarama config", zap.Error(err))
+	}
+	defer f.Close()
+	dec := toml.NewDecoder(f)
+	if err := dec.Decode(config); err != nil {
 		log.Fatal("Failed to read sarama config", zap.Error(err))
 	}
 	// Construct client.
