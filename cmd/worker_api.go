@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/spf13/cobra"
+	"go.od2.network/hive/pkg/appctx"
 	"go.od2.network/hive/pkg/njobs"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
@@ -35,7 +36,7 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 		panic(err)
 	}
 	// Build handler
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(appctx.Context())
 	defer cancel()
 	rd := redisClientFromEnv()
 	scripts, err := njobs.LoadScripts(ctx, rd)

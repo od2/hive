@@ -7,6 +7,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
 	"github.com/spf13/cobra"
+	"go.od2.network/hive/pkg/appctx"
 	"go.od2.network/hive/pkg/njobs"
 	"go.uber.org/zap"
 )
@@ -25,8 +26,8 @@ func init() {
 	rootCmd.AddCommand(&assignerCmd)
 }
 
-func runAssigner(cmd *cobra.Command, _ []string) {
-	ctx, cancel := context.WithCancel(context.Background())
+func runAssigner(_ *cobra.Command, _ []string) {
+	ctx, cancel := context.WithCancel(appctx.Context())
 	defer cancel()
 	// Connect to Redis.
 	rd := redisClientFromEnv()
