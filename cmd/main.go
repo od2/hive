@@ -29,6 +29,8 @@ var rootCmd = cobra.Command{
 		} else {
 			logConfig = zap.NewProductionConfig()
 		}
+		logConfig.DisableCaller = true
+		logConfig.DisableStacktrace = true
 		var err error
 		log, err = logConfig.Build()
 		if err != nil {
