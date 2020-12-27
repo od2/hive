@@ -109,7 +109,7 @@ func saramaClientFromEnv() sarama.Client {
 	}
 	log.Info("Reading sarama config",
 		zap.String(ConfSaramaConfigFile, configFilePath))
-	config := new(sarama.Config)
+	config := sarama.NewConfig()
 	f, err := os.Open(configFilePath)
 	if err != nil {
 		log.Fatal("Failed to open sarama config", zap.Error(err))
