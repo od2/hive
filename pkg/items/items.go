@@ -1,4 +1,4 @@
-package db
+package items
 
 import (
 	"context"
@@ -11,14 +11,14 @@ import (
 	"go.od2.network/hive/pkg/types"
 )
 
-// ItemStore stores a collection of items.
-type ItemStore struct {
+// Store stores a collection of items.
+type Store struct {
 	DB        *sqlx.DB
 	TableName string
 	PKType    string
 }
 
-func (i *ItemStore) CreateTable(ctx context.Context) error {
+func (i *Store) CreateTable(ctx context.Context) error {
 	const template = `CREATE TABLE %s (
 	item_id %s PRIMARY KEY,
 	found_t DATETIME NOT NULL,
@@ -39,7 +39,7 @@ type itemStoreRow struct {
 
 // InsertNewlyDiscovered inserts newly found items into the items table.
 // If the items already exist, nothing is done.
-func (i *ItemStore) InsertNewlyDiscovered(ctx context.Context, pointers []*types.ItemPointer) error {
+func (i *Store) InsertNewlyDiscovered(ctx context.Context, pointers []*types.ItemPointer) error {
 	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,
 		ReadOnly:  false,
@@ -67,7 +67,7 @@ VALUES (:item_id, :found_t);`
 }
 
 // PushResults updates items with task results.
-func (i *ItemStore) PushTaskResults(ctx context.Context, results []*types.TaskResult) error {
+func (i *Store) PushTaskResults(ctx context.Context, results []*types.TaskResult) error {
 	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,
 		ReadOnly:  false,

@@ -1,4 +1,4 @@
-package db
+package items
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 func TestItemStore(t *testing.T) {
 	db := connect(t)
 	defer db.Close()
-	itemStore := &ItemStore{
+	itemStore := &Store{
 		DB:        db,
 		TableName: "item_store_1",
 		PKType:    "BIGINT UNSIGNED",
@@ -108,7 +108,7 @@ func TestItemStore(t *testing.T) {
 	}, scanItemStore(t, itemStore))
 }
 
-func scanItemStore(t *testing.T, itemStore *ItemStore) (rows []itemStoreRow) {
+func scanItemStore(t *testing.T, itemStore *Store) (rows []itemStoreRow) {
 	require.NoError(t, itemStore.DB.Select(&rows,
 		fmt.Sprintf("SELECT * FROM %s ORDER BY item_id ASC", itemStore.TableName)))
 	return
