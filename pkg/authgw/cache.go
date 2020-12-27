@@ -3,6 +3,7 @@ package authgw
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -122,7 +123,9 @@ func (i *CacheInvalidation) read(ctx context.Context) error {
 		Count:   128,
 		Block:   time.Second,
 	}).Result()
-	if err != nil {
+	if errors.Is(err, redis.Nil) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 	if len(streams) < 1 {
