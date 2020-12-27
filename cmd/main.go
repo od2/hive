@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
@@ -29,13 +30,24 @@ var rootCmd = cobra.Command{
 
 var devMode bool
 var log *zap.Logger
+var configPath string
 
 func init() {
 	persistentFlags := rootCmd.PersistentFlags()
 	persistentFlags.BoolVar(&devMode, "dev", false, "Dev mode")
+	persistentFlags.StringVarP(&configPath, "config", "c", "", "Config file")
 }
 
 func main() {
+	if configPath == "" {
+		_, _ = fmt.Fprintln(os.Stderr, "No config path given")
+		os.Exit(1)
+	}
+	viper.SetConfigFile(configPath)
+	viper.SetConfigType("toml")
+	if err := viper.ReadInConfig(); err != nil {
+		panic("Failed to read config: " + err.Error())
+	}
 	if err := rootCmd.Execute(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err.Error())
 	}
