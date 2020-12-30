@@ -1,0 +1,62 @@
+@startuml
+title Envoy Web Authentication
+
+actor client
+participant user_agent
+box envoy #Lavender
+participant filter
+participant cache
+participant oauth2
+endbox
+participant upstream
+participant github
+
+== OAuth 2.0 Authorization Code Grant ==
+
+client -> user_agent ++: View\nprotected\npage
+user_agent -> filter ++: GET /protected
+filter -> oauth2 ++: verify HMACToken
+filter <-- oauth2 --: unauthenticated
+note left: Redirect user to\nGitHub SSO when\nauth token is invalid
+user_agent <-- filter --: 302 redirect to IdP
+user_agent -> github ++: GET /login
+user_agent <-- github --: 200 login form
+user_agent -> github ++: POST /authorize
+user_agent <-- github --: 302 redirect to callback
+note over user_agent: Signed into IdP
+user_agent -> oauth2 ++: POST /callback
+oauth2 -> github ++: POST /access_token
+oauth2 <-- github --: 200 access_token
+oauth2 -> oauth2: sign HMACToken
+user_agent <-- oauth2 --: 302 redirect\n  to protected\nset-cookie: HMACToken
+note right: Envoy adds HMAC on\nreturned access token
+note over user_agent: HMAC token\nstored in cookie
+
+== Establish Identity ==
+
+user_agent -> filter ++: GET /protected\ncookie: HMACToken
+filter -> oauth2 ++: verify HMACToken
+filter <-- oauth2 --: OK
+note over filter: Need to link identity\nto access token (Lua)
+filter -> cache ++: GET /user
+activate filter #SkyBlue
+
+alt cache empty
+  cache -> github ++: GET /user
+  cache <-- github --: 200 user
+else cache match
+  cache -> cache: 200 cached user
+end
+
+filter <-- cache --: 200 user
+deactivate filter
+
+== Pass ==
+
+filter -> upstream ++: GET /protected\nx-od2-user: bob
+note left: Identity passed\nto upstream
+filter <-- upstream --: 200 OK
+user_agent <-- filter --: 200 OK
+client <-- user_agent --: Protected\npage
+
+@enduml
