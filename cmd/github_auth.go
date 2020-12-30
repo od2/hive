@@ -74,7 +74,7 @@ func runGitHubAuth(cmd *cobra.Command, _ []string) {
 	}
 	log.Info("Starting server", zap.String("bind", bind))
 	if err := hs.ListenAndServe(); err != nil {
-		log.Fatal("Server failed")
+		log.Fatal("Server failed", zap.Error(err))
 	}
 }
 

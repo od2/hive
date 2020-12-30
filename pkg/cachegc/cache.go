@@ -22,6 +22,13 @@ func NewCache(cache simplelru.LRUCache, ttl time.Duration) *Cache {
 	return &Cache{LRUCache: cache, TTL: ttl}
 }
 
+func (c *Cache) Add(key, value interface{}) bool {
+	return c.LRUCache.Add(key, &cacheEntry{
+		data:        value,
+		lastUpdated: time.Now(),
+	})
+}
+
 // Get returns an item in the cache, ignoring expired items.
 func (c *Cache) Get(key interface{}) (value interface{}, ok bool) {
 	entryI, ok := c.LRUCache.Get(key)
