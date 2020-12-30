@@ -53,8 +53,10 @@ func runGitHubAuth(cmd *cobra.Command, _ []string) {
 		wr.Header().Set("Content-Type", "text/plain")
 		entry, ok := cache.Get(string(body))
 		if ok {
+			login := entry.(string)
+			log.Info("Catch hit", zap.String("user", login))
 			wr.WriteHeader(http.StatusOK)
-			_, _ = wr.Write([]byte(entry.(string)))
+			_, _ = wr.Write([]byte(login))
 			return
 		}
 		login, err := fetchLogin(req.Context(), string(body))
@@ -63,6 +65,7 @@ func runGitHubAuth(cmd *cobra.Command, _ []string) {
 			wr.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		log.Info("Cache miss", zap.String("user", login))
 		cache.Add(string(body), login)
 		wr.WriteHeader(http.StatusOK)
 		_, _ = wr.Write([]byte(login))
