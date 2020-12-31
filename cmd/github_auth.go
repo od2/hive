@@ -1,15 +1,12 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"net/http"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/cachegc"
 	"go.uber.org/zap"
 )
@@ -42,81 +39,18 @@ func runGitHubAuth(cmd *cobra.Command, _ []string) {
 		panic("failed to create cache: " + err.Error())
 	}
 	cache := cachegc.NewCache(baseCache, viper.GetDuration(ConfAuthgwCacheTTL))
-	// Build HTTP handler.
-	handler := http.HandlerFunc(func(wr http.ResponseWriter, req *http.Request) {
-		log := log.With(zap.String("remote_addr", req.RemoteAddr))
-		body, err := ioutil.ReadAll(req.Body)
-		if err != nil {
-			log.Error("Failed to read request body", zap.Error(err))
-			return
-		}
-		wr.Header().Set("Content-Type", "text/plain")
-		entry, ok := cache.Get(string(body))
-		if ok {
-			user := entry.(*user)
-			log.Info("Cache hit", zap.String("user", user.Login))
-			wr.WriteHeader(http.StatusOK)
-			buf, err := json.Marshal(user)
-			if err != nil {
-				log.Error("Failed to marshal user", zap.Error(err))
-				return
-			}
-			_, _ = wr.Write(buf)
-			return
-		}
-		user, err := fetchUser(req.Context(), string(body))
-		if err != nil {
-			log.Error("Failed to fetch", zap.Error(err))
-			wr.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		log.Info("Cache miss", zap.String("user", user.Login))
-		cache.Add(string(body), user)
-		wr.WriteHeader(http.StatusOK)
-		buf, err := json.Marshal(user)
-		if err != nil {
-			log.Error("Failed to marshal user", zap.Error(err))
-			return
-		}
-		_, _ = wr.Write(buf)
-	})
-	// Start h2c (HTTP/2 over TCP) server.
+	idp := &auth.GitHubIdP{
+		HTTP:  http.DefaultClient,
+		Cache: cache,
+		Log:   log,
+	}
+	// Start HTTP server.
 	hs := &http.Server{
 		Addr:    bind,
-		Handler: handler,
+		Handler: idp,
 	}
 	log.Info("Starting server", zap.String("bind", bind))
 	if err := hs.ListenAndServe(); err != nil {
 		log.Fatal("Server failed", zap.Error(err))
 	}
-}
-
-func fetchUser(ctx context.Context, authToken string) (*user, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "token "+authToken)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %d", res.StatusCode)
-	}
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	u := new(user)
-	if err := json.Unmarshal(body, u); err != nil {
-		return nil, err
-	}
-	return u, nil
-}
-
-type user struct {
-	ID    int64  `json:"id"`
-	Login string `json:"login"`
 }

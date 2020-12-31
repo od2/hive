@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"go.od2.network/hive/pkg/authgw"
+	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/types"
 )
 
@@ -27,7 +27,7 @@ func (s *Streamer) OpenAssignmentsStream(
 	ctx context.Context,
 	_ *types.OpenAssignmentsStreamRequest,
 ) (*types.OpenAssignmentsStreamResponse, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (s *Streamer) CloseAssignmentsStream(
 	ctx context.Context,
 	req *types.CloseAssignmentsStreamRequest,
 ) (*types.CloseAssignmentsStreamResponse, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (s *Streamer) WantAssignments(
 	ctx context.Context,
 	req *types.WantAssignmentsRequest,
 ) (*types.WantAssignmentsResponse, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func (s *Streamer) GetPendingAssignmentsCount(
 	ctx context.Context,
 	req *types.GetPendingAssignmentsCountRequest,
 ) (*types.PendingAssignmentsCount, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (s *Streamer) StreamAssignments(
 	ctx := outStream.Context()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func (s *Streamer) ReportAssignments(
 	ctx context.Context,
 	req *types.ReportAssignmentsRequest,
 ) (*types.ReportAssignmentsResponse, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

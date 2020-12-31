@@ -3,16 +3,15 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"net"
 	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/appctx"
+	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/njobs"
-	"go.od2.network/hive/pkg/token"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -29,7 +28,7 @@ var workerAPICmd = cobra.Command{
 
 func init() {
 	flags := workerAPICmd.Flags()
-	flags.String("bind", ":8000", "Server bind")
+	flags.String("socket", "", "UNIX socket address")
 
 	rootCmd.AddCommand(&workerAPICmd)
 }
@@ -37,7 +36,7 @@ func init() {
 func runWorkerAPI(cmd *cobra.Command, _ []string) {
 	// Get flags
 	flags := cmd.Flags()
-	bind, err := flags.GetString("bind")
+	socket, err := flags.GetString("socket")
 	if err != nil {
 		panic(err)
 	}
@@ -98,18 +97,9 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 			log.Fatal("Auth cache invalidation failed", zap.Error(err))
 		}
 	}()
-	authSecret := new([32]byte)
-	authSecretStr := viper.GetString(ConfAuthgwSecret)
-	if len(authSecretStr) != 64 {
-		log.Fatal("Invalid " + ConfAuthgwSecret)
-	}
-	if _, err := hex.Decode(authSecret[:], []byte(authSecretStr)); err != nil {
-		log.Fatal("Invalid hex in " + ConfAuthgwSecret)
-	}
-	signer := token.NewSimpleSigner(authSecret)
-	interceptor := authgw.Interceptor{
+	interceptor := auth.WorkerAuthInterceptor{
 		Backend: cachedBackend,
-		Signer:  signer,
+		Signer:  getSigner(),
 	}
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(interceptor.Unary()),
@@ -120,11 +110,11 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 	}
 	types.RegisterAssignmentsServer(server, &streamer)
 	// Start listener
-	listen, err := net.Listen("tcp", bind)
+	listen, err := net.Listen("unix", socket)
 	if err != nil {
-		log.Fatal("Failed to listen", zap.String("bind", bind), zap.Error(err))
+		log.Fatal("Failed to listen", zap.String("socket", socket), zap.Error(err))
 	}
-	log.Info("Starting server", zap.String("bind", bind))
+	log.Info("Starting server", zap.String("socket", socket))
 	if err := server.Serve(listen); err != nil {
 		log.Fatal("Server failed", zap.Error(err))
 	}

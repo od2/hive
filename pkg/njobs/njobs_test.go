@@ -10,7 +10,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.od2.network/hive/pkg/authgw"
+	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/redistest"
 	"go.od2.network/hive/pkg/types"
 	"google.golang.org/grpc"
@@ -20,8 +20,8 @@ import (
 func TestNJobs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	authCtx := &authgw.Context{WorkerID: 1}
-	ctx = authgw.WithContext(ctx, authCtx)
+	authCtx := &auth.WorkerContext{WorkerID: 1}
+	ctx = auth.WithWorkerContext(ctx, authCtx)
 	rd := redistest.NewRedis(ctx, t)
 	defer rd.Close()
 
@@ -54,7 +54,7 @@ func TestNJobs(t *testing.T) {
 			info *grpc.UnaryServerInfo,
 			handler grpc.UnaryHandler,
 		) (resp interface{}, err error) {
-			return handler(authgw.WithContext(ctx, authCtx), req)
+			return handler(auth.WithWorkerContext(ctx, authCtx), req)
 		}),
 		grpc.StreamInterceptor(func(
 			srv interface{},
@@ -64,7 +64,7 @@ func TestNJobs(t *testing.T) {
 		) error {
 			return handler(srv, &serverStream{
 				ServerStream: ss,
-				ctx:          authgw.WithContext(ctx, authCtx),
+				ctx:          auth.WithWorkerContext(ctx, authCtx),
 			})
 		}),
 	)
