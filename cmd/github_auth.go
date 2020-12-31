@@ -53,22 +53,32 @@ func runGitHubAuth(cmd *cobra.Command, _ []string) {
 		wr.Header().Set("Content-Type", "text/plain")
 		entry, ok := cache.Get(string(body))
 		if ok {
-			login := entry.(string)
-			log.Info("Catch hit", zap.String("user", login))
+			user := entry.(*user)
+			log.Info("Cache hit", zap.String("user", user.Login))
 			wr.WriteHeader(http.StatusOK)
-			_, _ = wr.Write([]byte(login))
+			buf, err := json.Marshal(user)
+			if err != nil {
+				log.Error("Failed to marshal user", zap.Error(err))
+				return
+			}
+			_, _ = wr.Write(buf)
 			return
 		}
-		login, err := fetchLogin(req.Context(), string(body))
+		user, err := fetchUser(req.Context(), string(body))
 		if err != nil {
 			log.Error("Failed to fetch", zap.Error(err))
 			wr.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		log.Info("Cache miss", zap.String("user", login))
-		cache.Add(string(body), login)
+		log.Info("Cache miss", zap.String("user", user.Login))
+		cache.Add(string(body), user)
 		wr.WriteHeader(http.StatusOK)
-		_, _ = wr.Write([]byte(login))
+		buf, err := json.Marshal(user)
+		if err != nil {
+			log.Error("Failed to marshal user", zap.Error(err))
+			return
+		}
+		_, _ = wr.Write(buf)
 	})
 	// Start h2c (HTTP/2 over TCP) server.
 	hs := &http.Server{
@@ -81,31 +91,32 @@ func runGitHubAuth(cmd *cobra.Command, _ []string) {
 	}
 }
 
-func fetchLogin(ctx context.Context, authToken string) (string, error) {
+func fetchUser(ctx context.Context, authToken string) (*user, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "token "+authToken)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("status %d", res.StatusCode)
+		return nil, fmt.Errorf("status %d", res.StatusCode)
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	var u user
-	if err := json.Unmarshal(body, &u); err != nil {
-		return "", err
+	u := new(user)
+	if err := json.Unmarshal(body, u); err != nil {
+		return nil, err
 	}
-	return u.Login, nil
+	return u, nil
 }
 
 type user struct {
+	ID    int64  `json:"id"`
 	Login string `json:"login"`
 }

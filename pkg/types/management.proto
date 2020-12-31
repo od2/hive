@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package od2_network.hive;
+option go_package = "go.od2.network/hive/pkg/types";
+
+import "google/protobuf/timestamp.proto";
+
+// Assignments streams task assignments to workers.
+service Management {
+  rpc CreateWorkerToken(CreateWorkerTokenRequest) returns (WorkerToken);
+}
+
+message CreateWorkerTokenRequest {
+  google.protobuf.Timestamp expire_at = 1;
+}
+
+message WorkerToken {
+  string token = 1;
+}
