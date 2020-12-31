@@ -36,12 +36,6 @@ func runManagementAPI(cmd *cobra.Command, _ []string) {
 	if err != nil {
 		panic(err)
 	}
-	// Get web identity
-	interceptor := auth.WebIdentityInterceptor{}
-	server := grpc.NewServer(
-		grpc.UnaryInterceptor(interceptor.Unary()),
-		grpc.StreamInterceptor(interceptor.Stream()),
-	)
 	// Connect to SQL.
 	log.Info("Connecting to MySQL")
 	db, err := sql.Open("mysql", viper.GetString(ConfMySQLDSN))
@@ -57,6 +51,12 @@ func runManagementAPI(cmd *cobra.Command, _ []string) {
 	if err := db.Ping(); err != nil {
 		log.Fatal("Failed to ping DB", zap.Error(err))
 	}
+	// Assemble server with web auth
+	interceptor := auth.WebIdentityInterceptor{}
+	server := grpc.NewServer(
+		grpc.UnaryInterceptor(interceptor.Unary()),
+		grpc.StreamInterceptor(interceptor.Stream()),
+	)
 	// Assemble handler
 	handler := management.Handler{
 		DB:     db,
