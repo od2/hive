@@ -41,6 +41,7 @@ func runReporter(_ *cobra.Command, _ []string) {
 	}
 	// Connect to Kafka.
 	saramaClient := saramaClientFromEnv()
+	saramaClient.Config().Producer.Return.Successes = true
 	producer, err := sarama.NewSyncProducerFromClient(saramaClient)
 	if err != nil {
 		log.Fatal("Failed to build Kafka producer", zap.Error(err))
