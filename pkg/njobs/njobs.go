@@ -76,6 +76,10 @@ type Options struct {
 	TaskExpireInterval time.Duration // max task expire interval (runs sooner by default) // TODO unused
 	TaskExpireBatch    uint          // max assignments to expire at once
 	DeliverBatch       uint          // max assignments in one gRPC server-side event
+	// Result reporting
+	ResultInterval time.Duration
+	ResultBatch    uint
+	ResultBackoff  time.Duration
 }
 
 // DefaultOptions returns the default njobs options.

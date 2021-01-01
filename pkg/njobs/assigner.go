@@ -21,7 +21,6 @@ import (
 // The offset is stored in Redis (not Kafka), starting from the earliest message.
 type Assigner struct {
 	RedisClient *RedisClient
-	Options     *Options
 }
 
 // ConsumeClaim starts streaming messages from Kafka in batches.
@@ -32,7 +31,6 @@ func (a *Assigner) Run(msgs <-chan *sarama.ConsumerMessage) error {
 	// Start watchdog background routine and listen for error.
 	watchdog := Watchdog{
 		RedisClient: a.RedisClient,
-		Options:     a.Options,
 	}
 	watchdogErrC := make(chan error, 1)
 	var wg sync.WaitGroup
@@ -102,7 +100,7 @@ func (s *assignerState) flush(ctx context.Context) error {
 }
 
 func (s *assignerState) backOff(ctx context.Context) error {
-	timer := time.NewTimer(s.Options.AssignInterval)
+	timer := time.NewTimer(s.RedisClient.Options.AssignInterval)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():

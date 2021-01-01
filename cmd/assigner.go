@@ -84,16 +84,8 @@ func runAssigner(_ *cobra.Command, _ []string) {
 	// Spin up assigner.
 	assigner := njobs.Assigner{
 		RedisClient: &rc,
-		Options:     njobsOptionsFromEnv(),
 	}
 	log.Info("Starting assigner")
-	go func() {
-		<-ctx.Done()
-		log.Info("Context canceled, stopping consumer")
-		if err := partitionConsumer.Close(); err != nil {
-			log.Error("Error stopping consumer", zap.Error(err))
-		}
-	}()
 	if err := assigner.Run(partitionConsumer.Messages()); err != nil {
 		log.Fatal("Assigner failed", zap.Error(err))
 	}

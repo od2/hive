@@ -98,6 +98,7 @@ message ReportAssignmentsRequest {
 message AssignmentResult {
   KafkaPointer kafka_pointer = 1;
   TaskStatus status = 2;
+  int64 worker_id = 3;
 }
 
 message ReportAssignmentsResponse {

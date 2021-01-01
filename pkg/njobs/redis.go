@@ -619,13 +619,6 @@ while true do
 end
 `
 
-// Expiration marks a worker task assignment as expired.
-type Expiration struct {
-	Worker int64
-	Offset int64 // Kafka
-	ItemID int64
-}
-
 // evalExpire pops expired items form a worker stream.
 // It returns the timestamp when the next expiry happens, or 0 if unknown.
 func (r *RedisClient) evalExpire(ctx context.Context, worker int64, batch uint) (int64, error) {
