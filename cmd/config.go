@@ -32,6 +32,9 @@ const (
 	ConfNJobsTaskExpireInterval     = "njobs.task_expire_interval"
 	ConfNJobsTaskExpireBatch        = "njobs.task_expire_batch"
 	ConfNJobsDeliverBatch           = "njobs.deliver_batch"
+	ConfNJobsResultInterval         = "njobs.result_interval"
+	ConfNJobsResultBatch            = "njobs.result_batch"
+	ConfNJobsResultBackoff          = "njobs.result_backoff"
 
 	ConfSaramaAddrs      = "sarama.addrs"
 	ConfSaramaConfigFile = "sarama.config_file"
@@ -64,6 +67,9 @@ func init() {
 	viper.SetDefault(ConfNJobsTaskExpireInterval, 2*time.Second)
 	viper.SetDefault(ConfNJobsTaskExpireBatch, uint(128))
 	viper.SetDefault(ConfNJobsDeliverBatch, uint(2048))
+	viper.SetDefault(ConfNJobsResultInterval, 3*time.Second)
+	viper.SetDefault(ConfNJobsResultBatch, uint(64))
+	viper.SetDefault(ConfNJobsResultBackoff, 2*time.Second)
 
 	viper.SetDefault(ConfSaramaAddrs, []string{})
 	viper.SetDefault(ConfSaramaConfigFile, "")
@@ -115,6 +121,9 @@ func njobsOptionsFromEnv() *njobs.Options {
 		TaskExpireInterval:     viper.GetDuration(ConfNJobsTaskExpireInterval),
 		TaskExpireBatch:        viper.GetUint(ConfNJobsTaskExpireBatch),
 		DeliverBatch:           viper.GetUint(ConfNJobsDeliverBatch),
+		ResultInterval:         viper.GetDuration(ConfNJobsResultInterval),
+		ResultBatch:            viper.GetUint(ConfNJobsResultBatch),
+		ResultBackoff:          viper.GetDuration(ConfNJobsResultBackoff),
 	}
 }
 
