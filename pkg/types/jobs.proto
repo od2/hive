@@ -43,6 +43,9 @@ service Assignments {
 
   // ReportAssignments reports about completed tasks.
   rpc ReportAssignments(ReportAssignmentsRequest) returns (ReportAssignmentsResponse);
+
+  // ReportRelated reports related items.
+  rpc ReportRelated(ReportRelatedRequest) returns (ReportRelatedResponse);
 }
 
 message OpenAssignmentsStreamRequest {}
@@ -104,3 +107,9 @@ message AssignmentResult {
 message ReportAssignmentsResponse {
   int64 acknowledged = 1;
 }
+
+message ReportRelatedRequest {
+  repeated ItemPointer pointers = 1;
+}
+
+message ReportRelatedResponse {}

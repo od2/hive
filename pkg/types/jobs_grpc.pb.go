@@ -31,6 +31,8 @@ type AssignmentsClient interface {
 	StreamAssignments(ctx context.Context, in *StreamAssignmentsRequest, opts ...grpc.CallOption) (Assignments_StreamAssignmentsClient, error)
 	// ReportAssignments reports about completed tasks.
 	ReportAssignments(ctx context.Context, in *ReportAssignmentsRequest, opts ...grpc.CallOption) (*ReportAssignmentsResponse, error)
+	// ReportRelated reports related items.
+	ReportRelated(ctx context.Context, in *ReportRelatedRequest, opts ...grpc.CallOption) (*ReportRelatedResponse, error)
 }
 
 type assignmentsClient struct {
@@ -118,6 +120,15 @@ func (c *assignmentsClient) ReportAssignments(ctx context.Context, in *ReportAss
 	return out, nil
 }
 
+func (c *assignmentsClient) ReportRelated(ctx context.Context, in *ReportRelatedRequest, opts ...grpc.CallOption) (*ReportRelatedResponse, error) {
+	out := new(ReportRelatedResponse)
+	err := c.cc.Invoke(ctx, "/od2_network.hive.Assignments/ReportRelated", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AssignmentsServer is the server API for Assignments service.
 // All implementations must embed UnimplementedAssignmentsServer
 // for forward compatibility
@@ -136,6 +147,8 @@ type AssignmentsServer interface {
 	StreamAssignments(*StreamAssignmentsRequest, Assignments_StreamAssignmentsServer) error
 	// ReportAssignments reports about completed tasks.
 	ReportAssignments(context.Context, *ReportAssignmentsRequest) (*ReportAssignmentsResponse, error)
+	// ReportRelated reports related items.
+	ReportRelated(context.Context, *ReportRelatedRequest) (*ReportRelatedResponse, error)
 	mustEmbedUnimplementedAssignmentsServer()
 }
 
@@ -160,6 +173,9 @@ func (UnimplementedAssignmentsServer) StreamAssignments(*StreamAssignmentsReques
 }
 func (UnimplementedAssignmentsServer) ReportAssignments(context.Context, *ReportAssignmentsRequest) (*ReportAssignmentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportAssignments not implemented")
+}
+func (UnimplementedAssignmentsServer) ReportRelated(context.Context, *ReportRelatedRequest) (*ReportRelatedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportRelated not implemented")
 }
 func (UnimplementedAssignmentsServer) mustEmbedUnimplementedAssignmentsServer() {}
 
@@ -285,6 +301,24 @@ func _Assignments_ReportAssignments_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Assignments_ReportRelated_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportRelatedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssignmentsServer).ReportRelated(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/od2_network.hive.Assignments/ReportRelated",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssignmentsServer).ReportRelated(ctx, req.(*ReportRelatedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Assignments_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "od2_network.hive.Assignments",
 	HandlerType: (*AssignmentsServer)(nil),
@@ -308,6 +342,10 @@ var _Assignments_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportAssignments",
 			Handler:    _Assignments_ReportAssignments_Handler,
+		},
+		{
+			MethodName: "ReportRelated",
+			Handler:    _Assignments_ReportRelated_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
