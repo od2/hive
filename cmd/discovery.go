@@ -40,9 +40,15 @@ func runDiscovery(cmd *cobra.Command, _ []string) {
 	if err != nil {
 		panic(err)
 	}
+	if collection == "" {
+		log.Fatal("Empty --collection")
+	}
 	pkType, err := flags.GetString("pk-type")
 	if err != nil {
 		panic(err)
+	}
+	if pkType == "" {
+		log.Fatal("Empty --pk-type")
 	}
 	consumerGroupName, err := flags.GetString("consumer-group")
 	if err != nil {
