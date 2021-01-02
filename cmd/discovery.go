@@ -5,9 +5,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/jmoiron/sqlx"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/appctx"
 	"go.od2.network/hive/pkg/dedup"
 	"go.od2.network/hive/pkg/discovery"
@@ -95,7 +93,7 @@ func runDiscovery(cmd *cobra.Command, _ []string) {
 
 	// Connect to MySQL database.
 	log.Info("Connecting to MySQL")
-	db, err := sqlx.Open("mysql", viper.GetString(ConfMySQLDSN))
+	db, err := openDB()
 	if err != nil {
 		log.Fatal("Failed to connect to MySQL", zap.Error(err))
 	}

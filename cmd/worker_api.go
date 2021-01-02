@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"sync"
 
 	"github.com/spf13/cobra"
@@ -57,7 +56,7 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 	}
 	// Connect to SQL.
 	log.Info("Connecting to MySQL")
-	db, err := sql.Open("mysql", viper.GetString(ConfMySQLDSN))
+	db, err := openDB()
 	if err != nil {
 		log.Fatal("Failed to connect to MySQL", zap.Error(err))
 	}
@@ -71,7 +70,7 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 		log.Fatal("Failed to ping DB", zap.Error(err))
 	}
 	// Build auth gateway.
-	backend := authgw.Database{DB: db}
+	backend := authgw.Database{DB: db.DB}
 	cachedBackend, err := authgw.NewCache(&backend,
 		viper.GetInt(ConfAuthgwCacheSize),
 		viper.GetDuration(ConfAuthgwCacheTTL))

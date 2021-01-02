@@ -8,6 +8,8 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
+	"github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
 	"github.com/pelletier/go-toml"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/njobs"
@@ -173,4 +175,21 @@ func listenUnix(path string) (net.Listener, error) {
 		return nil, fmt.Errorf("failed to remove socket: %w", err)
 	}
 	return net.Listen("unix", path)
+}
+
+func openDB() (*sqlx.DB, error) {
+	// Force Go-compatible time handling.
+	cfg, err := mysql.ParseDSN(viper.GetString(ConfMySQLDSN))
+	if err != nil {
+		return nil, err
+	}
+	cfg.ParseTime = true
+	cfg.Loc = time.Local
+	log.Info("Connecting to MySQL DB",
+		zap.String("mysql.net", cfg.Net),
+		zap.String("mysql.addr", cfg.Addr),
+		zap.String("mysql.db_name", cfg.DBName),
+		zap.String("mysql.user", cfg.User))
+	// Connect
+	return sqlx.Open("mysql", cfg.FormatDSN())
 }

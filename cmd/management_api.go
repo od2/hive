@@ -1,11 +1,8 @@
 package main
 
 import (
-	"database/sql"
-
 	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/discovery"
 	"go.od2.network/hive/pkg/management"
@@ -39,7 +36,7 @@ func runManagementAPI(cmd *cobra.Command, _ []string) {
 	}
 	// Connect to SQL.
 	log.Info("Connecting to MySQL")
-	db, err := sql.Open("mysql", viper.GetString(ConfMySQLDSN))
+	db, err := openDB()
 	if err != nil {
 		log.Fatal("Failed to connect to MySQL", zap.Error(err))
 	}
@@ -78,7 +75,7 @@ func runManagementAPI(cmd *cobra.Command, _ []string) {
 	}()
 	// Assemble handlers
 	types.RegisterManagementServer(server, &management.Handler{
-		DB:     db,
+		DB:     db.DB,
 		Signer: getSigner(),
 	})
 	types.RegisterDiscoveryServer(server, &discovery.Handler{

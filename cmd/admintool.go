@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/rs/xid"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/token"
 )
 
@@ -52,7 +50,7 @@ var adminWorkerTokenCreateCmd = cobra.Command{
 			fmt.Fprintln(os.Stderr, "Invalid worker ID:", workerID)
 			os.Exit(1)
 		}
-		db, err := sql.Open("mysql", viper.GetString(ConfMySQLDSN))
+		db, err := openDB()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
