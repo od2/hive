@@ -18,6 +18,7 @@ import (
 	"go.od2.network/hive/pkg/redistest"
 	"go.od2.network/hive/pkg/token"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -222,6 +223,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	interceptor := auth.WorkerAuthInterceptor{
 		Backend: simpleTokenBackend{},
 		Signer:  signer,
+		Log:     zaptest.NewLogger(t),
 	}
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(interceptor.Unary()),

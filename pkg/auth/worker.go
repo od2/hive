@@ -6,6 +6,7 @@ import (
 
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/token"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -35,6 +36,7 @@ func (a *WorkerCredentials) GetRequestMetadata(_ context.Context, _ ...string) (
 type WorkerAuthInterceptor struct {
 	authgw.Backend
 	token.Signer
+	Log *zap.Logger
 }
 
 func (w *WorkerAuthInterceptor) intercept(ctx context.Context) (context.Context, error) {
@@ -61,7 +63,7 @@ func (w *WorkerAuthInterceptor) intercept(ctx context.Context) (context.Context,
 	if err == authgw.ErrUnknown {
 		return ctx, status.Error(codes.Unauthenticated, "invalid auth token")
 	} else if err != nil {
-		// TODO Log error
+		w.Log.Error("Internal auth error", zap.Error(err))
 		return ctx, status.Errorf(codes.Internal, "internal auth error")
 	}
 	if !tokenInfo.Valid {

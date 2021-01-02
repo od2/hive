@@ -99,6 +99,7 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 	interceptor := auth.WorkerAuthInterceptor{
 		Backend: cachedBackend,
 		Signer:  getSigner(),
+		Log:     log.Named("auth"),
 	}
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(interceptor.Unary()),
