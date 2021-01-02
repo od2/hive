@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"net"
 
 	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
@@ -86,7 +85,7 @@ func runManagementAPI(cmd *cobra.Command, _ []string) {
 		Producer: producer,
 	})
 	// Start listener
-	listen, err := net.Listen("unix", socket)
+	listen, err := listenUnix(socket)
 	if err != nil {
 		log.Fatal("Failed to listen", zap.String("socket", socket), zap.Error(err))
 	}

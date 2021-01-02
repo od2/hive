@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"net"
 	"sync"
 
 	"github.com/spf13/cobra"
@@ -110,7 +109,7 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 	}
 	types.RegisterAssignmentsServer(server, &streamer)
 	// Start listener
-	listen, err := net.Listen("unix", socket)
+	listen, err := listenUnix(socket)
 	if err != nil {
 		log.Fatal("Failed to listen", zap.String("socket", socket), zap.Error(err))
 	}
