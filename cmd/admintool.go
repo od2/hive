@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/rs/xid"
 	"github.com/spf13/cobra"
+	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/token"
 )
 
@@ -30,13 +32,13 @@ func init() {
 	adminCmd.AddCommand(&adminWorkerCmd)
 }
 
-var workerTokenCmd = cobra.Command{
+var adminWorkerTokenCmd = cobra.Command{
 	Use:   "token",
 	Short: "Manage worker tokens",
 }
 
 func init() {
-	adminWorkerCmd.AddCommand(&workerTokenCmd)
+	adminWorkerCmd.AddCommand(&adminWorkerTokenCmd)
 }
 
 var adminWorkerTokenCreateCmd = cobra.Command{
@@ -83,5 +85,47 @@ var adminWorkerTokenCreateCmd = cobra.Command{
 }
 
 func init() {
-	workerTokenCmd.AddCommand(&adminWorkerTokenCreateCmd)
+	adminWorkerTokenCmd.AddCommand(&adminWorkerTokenCreateCmd)
+}
+
+var adminWorkerTokenVerifyCmd = cobra.Command{
+	Use:   "verify <token>",
+	Short: "Verify worker token",
+	Args:  cobra.ExactArgs(1),
+	Run: func(_ *cobra.Command, args []string) {
+		authToken := args[0]
+		signedPayload := token.Unmarshal(authToken)
+		if signedPayload == nil {
+			fmt.Println("REJECT: Invalid token")
+			return
+		}
+		signer := getSigner()
+		if !signer.VerifyTag(signedPayload) {
+			fmt.Println("REJECT: Invalid MAC signature")
+			return
+		}
+		db, err := openDB()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		authgwDB := authgw.Database{DB: db.DB}
+		tokenInfo, err := authgwDB.LookupToken(context.Background(), signedPayload.Payload.ID)
+		if errors.Is(err, authgw.ErrUnknown) {
+			fmt.Println("REJECT: Unknown token")
+			return
+		} else if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if time.Now().After(tokenInfo.ExpiresAt) {
+			fmt.Println("REJECT: Token expired")
+			return
+		}
+		fmt.Println("OK")
+	},
+}
+
+func init() {
+	adminWorkerTokenCmd.AddCommand(&adminWorkerTokenVerifyCmd)
 }
