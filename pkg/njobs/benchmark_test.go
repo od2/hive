@@ -206,7 +206,6 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	// Build assigner.
 	assigner := &Assigner{
 		RedisClient: rc,
-		Options:     &opts.Options,
 	}
 	// Build streamer.
 	streamer := &Streamer{

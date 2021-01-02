@@ -18,7 +18,9 @@ type Store struct {
 	PKType    string
 }
 
+// CreateTable creates an items table.
 func (i *Store) CreateTable(ctx context.Context) error {
+	// language=MariaDB
 	const template = `CREATE TABLE %s (
 	item_id %s PRIMARY KEY,
 	found_t DATETIME NOT NULL,
@@ -37,9 +39,9 @@ type itemStoreRow struct {
 	Updates    uint64       `db:"updates"`
 }
 
-// InsertNewlyDiscovered inserts newly found items into the items table.
+// InsertDiscovered inserts newly found items into the items table.
 // If the items already exist, nothing is done.
-func (i *Store) InsertNewlyDiscovered(ctx context.Context, pointers []*types.ItemPointer) error {
+func (i *Store) InsertDiscovered(ctx context.Context, pointers []*types.ItemPointer) error {
 	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,
 		ReadOnly:  false,
@@ -47,6 +49,7 @@ func (i *Store) InsertNewlyDiscovered(ctx context.Context, pointers []*types.Ite
 	if err != nil {
 		return err
 	}
+	// language=MariaDB
 	const stmt = `INSERT IGNORE INTO %s (item_id, found_t)
 VALUES (:item_id, :found_t);`
 	inserts := make([]itemStoreRow, len(pointers))
@@ -66,6 +69,34 @@ VALUES (:item_id, :found_t);`
 	return tx.Commit()
 }
 
+// FilterNewPointers filters a batch of pointers, removing items that were already seen.
+func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]string, error) {
+	tx, err := i.DB.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+		ReadOnly:  false,
+	})
+	if err != nil {
+		return nil, err
+	}
+	const stmt = `SELECT item_id FROM %s WHERE item_id NOT IN (?);`
+	results, err := tx.QueryContext(ctx, fmt.Sprintf(stmt, i.TableName), itemIDs)
+	if err != nil {
+		return nil, err
+	}
+	deduped := make([]string, 0, len(itemIDs))
+	for results.Next() {
+		var itemID string
+		if err := results.Scan(&itemID); err != nil {
+			return nil, fmt.Errorf("failed to scan results: %w", err)
+		}
+		deduped = append(deduped, itemID)
+	}
+	if err := results.Err(); err != nil {
+		return nil, fmt.Errorf("failed to scan result set: %w", err)
+	}
+	return deduped, nil
+}
+
 // PushResults updates items with task results.
 func (i *Store) PushTaskResults(ctx context.Context, results []*types.TaskResult) error {
 	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
@@ -75,6 +106,7 @@ func (i *Store) PushTaskResults(ctx context.Context, results []*types.TaskResult
 	if err != nil {
 		return err
 	}
+	// language=MariaDB
 	const stmt = `INSERT INTO %s (item_id, found_t, last_update, updates)
 VALUES (:item_id, :found_t, :last_update, :updates)
 ON DUPLICATE KEY UPDATE last_update = VALUES(last_update), updates = updates + 1;`

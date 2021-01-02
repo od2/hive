@@ -1,6 +1,6 @@
-// Package redisdedup implements set membership checks
+// Package dedup implements set membership checks
 // for deduplicating large sets of items.
-package redisdedup
+package dedup
 
 import "context"
 
@@ -21,7 +21,7 @@ type Item interface {
 // StringItem wraps string for use in Dedup.
 type StringItem string
 
-// DedupKey returns the string held by StrignItem.
+// DedupKey returns the string held by StringItem.
 func (s StringItem) DedupKey() string {
 	return string(s)
 }

@@ -8,14 +8,14 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
+	"go.od2.network/hive/pkg/dedup"
 	"go.od2.network/hive/pkg/items"
-	"go.od2.network/hive/pkg/redisdedup"
 	"go.od2.network/hive/pkg/types"
 )
 
 // Worker consumes a Kafka stream of pointers to a collection.
 type Worker struct {
-	Dedup     redisdedup.Dedup
+	Dedup     dedup.Dedup
 	MaxDelay  time.Duration
 	BatchSize uint
 
@@ -52,6 +52,8 @@ func (w *Worker) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.
 }
 
 func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) (bool, error) {
+	ctx := context.TODO()
+
 	timer := time.NewTimer(w.MaxDelay)
 	defer timer.Stop()
 	// Read message batch from Kafka.
@@ -77,11 +79,11 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 		}
 	}
 	// Run batch through dedup.
-	preDedupItems := make([]redisdedup.Item, len(pointers))
+	preDedupItems := make([]dedup.Item, len(pointers))
 	for i, ptr := range pointers {
 		preDedupItems[i] = ptr
 	}
-	dedupItems, err := w.Dedup.DedupItems(context.Background(), preDedupItems)
+	dedupItems, err := w.Dedup.DedupItems(ctx, preDedupItems)
 	if err != nil {
 		return false, fmt.Errorf("failed to dedup items: %w", err)
 	}
@@ -90,8 +92,12 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 		pointers[i] = dedupItem.(*types.ItemPointer)
 	}
 	// Write updates to items.
-	if err := w.ItemStore.InsertNewlyDiscovered(context.TODO(), pointers); err != nil {
+	if err := w.ItemStore.InsertDiscovered(ctx, pointers); err != nil {
 		return false, fmt.Errorf("failed to insert newly discovered items: %w", err)
+	}
+	// Add items to dedup.
+	if err := w.Dedup.AddItems(ctx, dedupItems); err != nil {
+		return false, fmt.Errorf("failed to add items to dedup: %w", err)
 	}
 	// Produce Kafka messages
 	if w.KafkaSink != nil {

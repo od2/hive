@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"net"
 
+	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/auth"
+	"go.od2.network/hive/pkg/discovery"
 	"go.od2.network/hive/pkg/management"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
@@ -57,12 +59,32 @@ func runManagementAPI(cmd *cobra.Command, _ []string) {
 		grpc.UnaryInterceptor(interceptor.Unary()),
 		grpc.StreamInterceptor(interceptor.Stream()),
 	)
-	// Assemble handler
-	handler := management.Handler{
+	// Connect to Kafka.
+	saramaClient := saramaClientFromEnv()
+	defer func() {
+		if err := saramaClient.Close(); err != nil {
+			log.Error("Failed to close sarama client", zap.Error(err))
+		}
+	}()
+	log.Info("Creating Kafka producer")
+	producer, err := sarama.NewSyncProducerFromClient(saramaClient)
+	if err != nil {
+		log.Fatal("Failed to build Kafka producer", zap.Error(err))
+	}
+	defer func() {
+		log.Info("Closing Kafka producer")
+		if err := producer.Close(); err != nil {
+			log.Error("Failed to close Kafka producer", zap.Error(err))
+		}
+	}()
+	// Assemble handlers
+	types.RegisterManagementServer(server, &management.Handler{
 		DB:     db,
 		Signer: getSigner(),
-	}
-	types.RegisterManagementServer(server, &handler)
+	})
+	types.RegisterDiscoveryServer(server, &discovery.Handler{
+		Producer: producer,
+	})
 	// Start listener
 	listen, err := net.Listen("unix", socket)
 	if err != nil {

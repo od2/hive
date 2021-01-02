@@ -32,7 +32,7 @@ func TestItemStore(t *testing.T) {
 		t.Log("Dropped table", itemStore.TableName)
 	}()
 	// Insert items the first time
-	require.NoError(t, itemStore.InsertNewlyDiscovered(ctx, []*types.ItemPointer{
+	require.NoError(t, itemStore.InsertDiscovered(ctx, []*types.ItemPointer{
 		{
 			Dst:       &types.ItemLocator{Id: "1"},
 			Timestamp: &timestamp.Timestamp{Seconds: 3},
@@ -44,7 +44,7 @@ func TestItemStore(t *testing.T) {
 	}))
 	t.Log("Newly discovered: 1, 2")
 	// Insert items again
-	require.NoError(t, itemStore.InsertNewlyDiscovered(ctx, []*types.ItemPointer{
+	require.NoError(t, itemStore.InsertDiscovered(ctx, []*types.ItemPointer{
 		{
 			Dst:       &types.ItemLocator{Id: "2"},
 			Timestamp: &timestamp.Timestamp{Seconds: 5},

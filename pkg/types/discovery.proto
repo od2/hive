@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package od2_network.hive;
+option go_package = "go.od2.network/hive/pkg/types";
+
+import "items.proto";
+
+service Discovery {
+  // ReportDiscovered reports related items.
+  rpc ReportDiscovered(ReportDiscoveredRequest) returns (ReportDiscoveredResponse);
+}
+
+message ReportDiscoveredRequest {
+  repeated ItemPointer pointers = 1;
+}
+
+message ReportDiscoveredResponse {}

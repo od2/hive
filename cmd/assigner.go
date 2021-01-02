@@ -51,6 +51,11 @@ func runAssigner(_ *cobra.Command, _ []string) {
 	}
 	// Connect to Kafka.
 	saramaClient := saramaClientFromEnv()
+	defer func() {
+		if err := saramaClient.Close(); err != nil {
+			log.Error("Failed to close sarama client", zap.Error(err))
+		}
+	}()
 	log.Info("Creating Kafka consumer")
 	consumer, err := sarama.NewConsumerFromClient(saramaClient)
 	if err != nil {
