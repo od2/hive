@@ -40,6 +40,7 @@ type WorkerAuthInterceptor struct {
 }
 
 func (w *WorkerAuthInterceptor) intercept(ctx context.Context) (context.Context, error) {
+	// TODO Log peer identity
 	// Get the auth token from the gRPC request.
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -53,23 +54,27 @@ func (w *WorkerAuthInterceptor) intercept(ctx context.Context) (context.Context,
 	// Verify MAC signature.
 	signedPayload := token.Unmarshal(authToken)
 	if signedPayload == nil {
-		return ctx, status.Error(codes.Unauthenticated, "invalid auth token")
+		w.Log.Debug("Rejecting corrupt auth token")
+		return ctx, status.Error(codes.Unauthenticated, "corrupt token")
 	}
 	if !w.VerifyTag(signedPayload) {
+		w.Log.Debug("Rejecting auth token with invalid signature")
 		return ctx, status.Error(codes.Unauthenticated, "invalid auth token")
 	}
 	// Lookup token in DB.
 	tokenInfo, err := w.Backend.LookupToken(ctx, signedPayload.Payload.ID)
 	if err == authgw.ErrUnknown {
+		w.Log.Debug("Rejecting unknown auth token")
 		return ctx, status.Error(codes.Unauthenticated, "invalid auth token")
 	} else if err != nil {
 		w.Log.Error("Internal auth error", zap.Error(err))
 		return ctx, status.Errorf(codes.Internal, "internal auth error")
 	}
 	if !tokenInfo.Valid {
+		w.Log.Debug("Rejecting explicitly invalid auth token")
 		return ctx, status.Error(codes.Unauthenticated, "invalid auth token")
 	}
-	// TODO Check if expired
+	w.Log.Debug("Accepted auth token")
 	authCtx := &WorkerContext{WorkerID: tokenInfo.WorkerID}
 	return WithWorkerContext(ctx, authCtx), nil
 }
