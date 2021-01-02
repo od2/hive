@@ -27,7 +27,7 @@ func (d *Database) LookupToken(ctx context.Context, id token.ID) (*TokenInfo, er
 	}
 	return &TokenInfo{
 		ExpiresAt: expiresAt,
-		Valid:     time.Now().After(expiresAt),
+		Valid:     time.Now().Before(expiresAt),
 		WorkerID:  workerID,
 	}, nil
 }
