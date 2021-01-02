@@ -166,7 +166,7 @@ func listenUnix(path string) (net.Listener, error) {
 		return nil, statErr
 	}
 	// Socket still exists, clean up.
-	if stat.Mode()|os.ModeSocket != 0 {
+	if stat.Mode()|os.ModeSocket == 0 {
 		return nil, fmt.Errorf("existing file is not a socket: %s", path)
 	}
 	if err := os.Remove(path); err != nil {
