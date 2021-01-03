@@ -9,6 +9,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/proto"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap"
 )
 
 // Reporter reads task results from Redis Streams and publishes them to Kafka.
@@ -18,6 +19,7 @@ type Reporter struct {
 	RedisClient *RedisClient
 	Producer    sarama.SyncProducer
 	Topic       string
+	Log         *zap.Logger
 }
 
 // Run moves task results from Redis Streams to Kafka.
@@ -50,6 +52,7 @@ func (r *Reporter) step(ctx context.Context) error {
 		return err
 	}
 	stream := streams[0]
+	r.Log.Debug("Read batch", zap.Int("result_count", len(stream.Messages)))
 	// Transform messages to Kafka.
 	msgIDs := make([]string, len(stream.Messages))
 	msgs := make([]*sarama.ProducerMessage, len(stream.Messages))
@@ -89,5 +92,9 @@ func (r *Reporter) step(ctx context.Context) error {
 		return fmt.Errorf("failed to send results to Kafka: %w", err)
 	}
 	// Remove messages from Redis Stream.
-	return r.RedisClient.Redis.XDel(ctx, r.RedisClient.PartitionKeys.Results, msgIDs...).Err()
+	if err := r.RedisClient.Redis.XDel(ctx, r.RedisClient.PartitionKeys.Results, msgIDs...).Err(); err != nil {
+		return fmt.Errorf("failed to mark Redis messages as done: %w", err)
+	}
+	r.Log.Debug("Flushed batch")
+	return nil
 }

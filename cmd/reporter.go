@@ -57,6 +57,7 @@ func runReporter(_ *cobra.Command, _ []string) {
 		RedisClient: &rc,
 		Producer:    producer,
 		Topic:       topic + ".results",
+		Log:         log,
 	}
 	log.Info("Starting reporter")
 	if err := reporter.Run(ctx); err != nil {
