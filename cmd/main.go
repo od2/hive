@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Shopify/sarama"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -38,6 +39,10 @@ var rootCmd = cobra.Command{
 		log, err = logConfig.Build()
 		if err != nil {
 			panic("failed to build logger: " + err.Error())
+		}
+		sarama.Logger, err = zap.NewStdLogAt(log.Named("sarama"), zap.InfoLevel)
+		if err != nil {
+			log.Fatal("Failed to build sarama logger", zap.Error(err))
 		}
 	},
 }

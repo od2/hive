@@ -2,7 +2,6 @@
 package discovery
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -54,8 +53,7 @@ func (w *Worker) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.
 }
 
 func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) (bool, error) {
-	ctx := context.TODO()
-
+	ctx := session.Context()
 	timer := time.NewTimer(w.MaxDelay)
 	defer timer.Stop()
 	// Read message batch from Kafka.
