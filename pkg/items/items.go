@@ -22,7 +22,7 @@ type Store struct {
 func (i *Store) CreateTable(ctx context.Context) error {
 	// language=MariaDB
 	const template = `CREATE TABLE %s (
-	item_id %s PRIMARY KEY,
+	item_id %s NOT NULL PRIMARY KEY,
 	found_t DATETIME NOT NULL,
 	last_update DATETIME,
 	updates BIGINT UNSIGNED DEFAULT 0 NOT NULL
@@ -71,6 +71,10 @@ VALUES (:item_id, :found_t);`
 
 // FilterNewPointers filters a batch of pointers, removing items that were already seen.
 func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]string, error) {
+	itemIDMap := make(map[string]bool)
+	for _, id := range itemIDs {
+		itemIDMap[id] = true
+	}
 	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,
 		ReadOnly:  true,
@@ -78,26 +82,29 @@ func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]stri
 	if err != nil {
 		return nil, err
 	}
-	const stmt = `SELECT item_id FROM %s WHERE item_id NOT IN (?);`
+	const stmt = `SELECT item_id FROM %s WHERE item_id IN (?);`
 	query, args, err := sqlx.In(fmt.Sprintf(stmt, i.TableName), itemIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile WHERE IN query: %w", err)
 	}
 	query = tx.Rebind(query)
-	results, err := tx.QueryContext(ctx, query, args...)
+	known, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	deduped := make([]string, 0, len(itemIDs))
-	for results.Next() {
+	for known.Next() {
 		var itemID string
-		if err := results.Scan(&itemID); err != nil {
+		if err := known.Scan(&itemID); err != nil {
 			return nil, fmt.Errorf("failed to scan results: %w", err)
 		}
-		deduped = append(deduped, itemID)
+		delete(itemIDMap, itemID)
 	}
-	if err := results.Err(); err != nil {
+	if err := known.Err(); err != nil {
 		return nil, fmt.Errorf("failed to scan result set: %w", err)
+	}
+	deduped := make([]string, 0, len(itemIDMap))
+	for id := range itemIDMap {
+		deduped = append(deduped, id)
 	}
 	return deduped, nil
 }

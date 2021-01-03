@@ -98,29 +98,31 @@ readLoop:
 		pointers[i] = dedupItem.(*types.ItemPointer)
 	}
 	w.Log.Debug("Deduped batch", zap.Int("dedup_count", len(pointers)))
-	// Write updates to items.
-	if err := w.ItemStore.InsertDiscovered(ctx, pointers); err != nil {
-		return false, fmt.Errorf("failed to insert newly discovered items: %w", err)
-	}
-	// Add items to dedup.
-	if err := w.Dedup.AddItems(ctx, dedupItems); err != nil {
-		return false, fmt.Errorf("failed to add items to dedup: %w", err)
-	}
-	// Produce Kafka messages
-	if w.KafkaSink != nil {
-		var messages []*sarama.ProducerMessage
-		for _, pointer := range pointers {
-			buf, err := proto.Marshal(pointer.Dst)
-			if err != nil {
-				return false, fmt.Errorf("failed to marshal protobuf: %w", err)
-			}
-			messages = append(messages, &sarama.ProducerMessage{
-				Topic: w.KafkaSink.Topic,
-				Value: sarama.ByteEncoder(buf),
-			})
+	if len(pointers) > 0 {
+		// Write updates to items.
+		if err := w.ItemStore.InsertDiscovered(ctx, pointers); err != nil {
+			return false, fmt.Errorf("failed to insert newly discovered items: %w", err)
 		}
-		if err := w.KafkaSink.Producer.SendMessages(messages); err != nil {
-			return false, fmt.Errorf("failed to produce Kafka messages: %w", err)
+		// Add items to dedup.
+		if err := w.Dedup.AddItems(ctx, dedupItems); err != nil {
+			return false, fmt.Errorf("failed to add items to dedup: %w", err)
+		}
+		// Produce Kafka messages
+		if w.KafkaSink != nil {
+			var messages []*sarama.ProducerMessage
+			for _, pointer := range pointers {
+				buf, err := proto.Marshal(pointer.Dst)
+				if err != nil {
+					return false, fmt.Errorf("failed to marshal protobuf: %w", err)
+				}
+				messages = append(messages, &sarama.ProducerMessage{
+					Topic: w.KafkaSink.Topic,
+					Value: sarama.ByteEncoder(buf),
+				})
+			}
+			if err := w.KafkaSink.Producer.SendMessages(messages); err != nil {
+				return false, fmt.Errorf("failed to produce Kafka messages: %w", err)
+			}
 		}
 	}
 	// Tell Kafka about consumer progress.
