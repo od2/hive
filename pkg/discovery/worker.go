@@ -59,10 +59,11 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 	// Read message batch from Kafka.
 	var pointers []*types.ItemPointer
 	var offset int64
+readLoop:
 	for i := uint(0); i < w.BatchSize; i++ {
 		select {
 		case <-timer.C:
-			return true, nil
+			break readLoop
 		case msg, ok := <-claim.Messages():
 			if !ok {
 				w.Log.Info("Incoming messages channel closed")
@@ -80,6 +81,9 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 		}
 	}
 	w.Log.Debug("Read batch", zap.Int("discover_count", len(pointers)))
+	if len(pointers) <= 0 {
+		return true, nil
+	}
 	// Run batch through dedup.
 	preDedupItems := make([]dedup.Item, len(pointers))
 	for i, ptr := range pointers {
