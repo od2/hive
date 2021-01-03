@@ -38,7 +38,7 @@ double jv_number_value(jv);
 jv jv_object_get(jv object, jv key);
 ]]
 
-local jq = ffi.load("jq")
+local jq = ffi.load("jq.so.1")
 
 local jv_meta = {}
 local jv_class = {}
