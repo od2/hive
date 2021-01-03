@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/Shopify/sarama"
 	"github.com/rs/xid"
 	"github.com/spf13/cobra"
 	"go.od2.network/hive/pkg/authgw"
@@ -268,4 +270,57 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 
 func init() {
 	adminAssignerCmd.AddCommand(&adminAssignerDumpRedisCmd)
+}
+
+var adminAssignerDumpKafkaCmd = cobra.Command{
+	Use:   "dump-kafka <topic> <partition>",
+	Short: "Dump Kafka content",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		topic := args[0]
+		partition64, err := strconv.ParseInt(args[1], 10, 32)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Invalid partition:", err)
+			os.Exit(1)
+		}
+		partition := int32(partition64)
+		client := saramaClientFromEnv()
+		consumer, err := sarama.NewConsumerFromClient(client)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to create consumer:", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := consumer.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, "Failed to close consumer:", err)
+			}
+		}()
+		partitionConsumer, err := consumer.ConsumePartition(topic, partition, sarama.OffsetOldest)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to create partition consumer:", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := partitionConsumer.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, "Failed to close partition consumer:", err)
+			}
+		}()
+		type message struct {
+			Offset int64  `json:"offset"`
+			Key    string `json:"key"`
+		}
+		enc := json.NewEncoder(os.Stdout)
+		for msg := range partitionConsumer.Messages() {
+			if err := enc.Encode(&message{
+				Offset: msg.Offset,
+				Key:    string(msg.Key),
+			}); err != nil {
+				panic(err)
+			}
+		}
+	},
+}
+
+func init() {
+	adminAssignerCmd.AddCommand(&adminAssignerDumpKafkaCmd)
 }
