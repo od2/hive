@@ -71,15 +71,20 @@ VALUES (:item_id, :found_t);`
 
 // FilterNewPointers filters a batch of pointers, removing items that were already seen.
 func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]string, error) {
-	tx, err := i.DB.BeginTx(ctx, &sql.TxOptions{
+	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,
-		ReadOnly:  false,
+		ReadOnly:  true,
 	})
 	if err != nil {
 		return nil, err
 	}
 	const stmt = `SELECT item_id FROM %s WHERE item_id NOT IN (?);`
-	results, err := tx.QueryContext(ctx, fmt.Sprintf(stmt, i.TableName), itemIDs)
+	query, args, err := sqlx.In(fmt.Sprintf(stmt, i.TableName), itemIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile WHERE IN query: %w", err)
+	}
+	query = tx.Rebind(query)
+	results, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
