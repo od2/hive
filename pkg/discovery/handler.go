@@ -27,6 +27,9 @@ func (h *Handler) ReportDiscovered(
 	// TODO Verify collections
 	msgs := make([]*sarama.ProducerMessage, len(req.Pointers))
 	for i, ptr := range req.Pointers {
+		if err := ptr.Check(); err != nil {
+			return nil, fmt.Errorf("invalid pointer: %w", err)
+		}
 		buf, err := proto.Marshal(ptr)
 		if err != nil {
 			return nil, fmt.Errorf("proto marshal failed: %w", err)
