@@ -11,6 +11,7 @@ import (
 	"go.od2.network/hive/pkg/dedup"
 	"go.od2.network/hive/pkg/items"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap"
 )
 
 // Worker consumes a Kafka stream of pointers to a collection.
@@ -21,6 +22,7 @@ type Worker struct {
 
 	ItemStore *items.Store
 	KafkaSink *KafkaSink
+	Log       *zap.Logger
 }
 
 type KafkaSink struct {
@@ -78,6 +80,7 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 			pointers = append(pointers, pointer)
 		}
 	}
+	w.Log.Debug("Read batch", zap.Int("discover_count", len(pointers)))
 	// Run batch through dedup.
 	preDedupItems := make([]dedup.Item, len(pointers))
 	for i, ptr := range pointers {
@@ -91,6 +94,7 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 	for i, dedupItem := range dedupItems {
 		pointers[i] = dedupItem.(*types.ItemPointer)
 	}
+	w.Log.Debug("Deduped batch", zap.Int("dedup_count", len(pointers)))
 	// Write updates to items.
 	if err := w.ItemStore.InsertDiscovered(ctx, pointers); err != nil {
 		return false, fmt.Errorf("failed to insert newly discovered items: %w", err)
@@ -121,5 +125,6 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 		session.MarkOffset(claim.Topic(), claim.Partition(), offset+1, "")
 		session.Commit()
 	}
+	w.Log.Debug("Flushed batch")
 	return true, nil
 }

@@ -128,6 +128,7 @@ func runDiscovery(cmd *cobra.Command, _ []string) {
 			Producer: producer,
 			Topic:    tasksTopic,
 		},
+		Log: log,
 	}
 	log.Info("Producing new tasks",
 		zap.String("kafka.topic", tasksTopic))

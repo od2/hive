@@ -131,6 +131,7 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 	types.RegisterAssignmentsServer(server, &streamer)
 	types.RegisterDiscoveryServer(server, &discovery.Handler{
 		Producer: producer,
+		Log:      log.Named("discovery"),
 	})
 	// Start listener
 	listen, err := listenUnix(socket)

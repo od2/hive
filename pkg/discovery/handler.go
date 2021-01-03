@@ -7,11 +7,13 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap"
 )
 
 // Handler is used to report crawl discovered items to Kafka.
 type Handler struct {
 	Producer sarama.SyncProducer
+	Log      *zap.Logger
 
 	types.UnimplementedDiscoveryServer
 }
@@ -37,6 +39,7 @@ func (h *Handler) ReportDiscovered(
 	if err := h.Producer.SendMessages(msgs); err != nil {
 		return nil, fmt.Errorf("failed to send messages to Kafka: %w", err)
 	}
+	h.Log.Debug("Processed worker report", zap.Int("discover_count", len(msgs)))
 	// TODO Metrics
 	return &types.ReportDiscoveredResponse{}, nil
 }
