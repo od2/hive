@@ -4,11 +4,13 @@ import (
 	"context"
 	"sync"
 
+	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/appctx"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/authgw"
+	"go.od2.network/hive/pkg/discovery"
 	"go.od2.network/hive/pkg/njobs"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
@@ -104,10 +106,32 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 		grpc.UnaryInterceptor(interceptor.Unary()),
 		grpc.StreamInterceptor(interceptor.Stream()),
 	)
+
+	// Connect to Kafka.
+	saramaClient := saramaClientFromEnv()
+	defer func() {
+		if err := saramaClient.Close(); err != nil {
+			log.Error("Failed to close sarama client", zap.Error(err))
+		}
+	}()
+	log.Info("Creating Kafka producer")
+	producer, err := sarama.NewSyncProducerFromClient(saramaClient)
+	if err != nil {
+		log.Fatal("Failed to build Kafka producer", zap.Error(err))
+	}
+	defer func() {
+		log.Info("Closing Kafka producer")
+		if err := producer.Close(); err != nil {
+			log.Error("Failed to close Kafka producer", zap.Error(err))
+		}
+	}()
 	streamer := njobs.Streamer{
 		RedisClient: &rc,
 	}
 	types.RegisterAssignmentsServer(server, &streamer)
+	types.RegisterDiscoveryServer(server, &discovery.Handler{
+		Producer: producer,
+	})
 	// Start listener
 	listen, err := listenUnix(socket)
 	if err != nil {
