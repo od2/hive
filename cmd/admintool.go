@@ -257,7 +257,8 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 			for k, v := range workerOffsets {
 				key := []byte(k)
 				worker := binary.BigEndian.Uint64(key[:8])
-				fmt.Printf("\t%d: %s\n", worker, v)
+				offset := binary.BigEndian.Uint64([]byte(v))
+				fmt.Printf("\t%d: %d\n", worker, offset)
 			}
 		}
 
