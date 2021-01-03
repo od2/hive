@@ -53,12 +53,18 @@ func (a *Assigner) Run(msgs <-chan *sarama.ConsumerMessage) error {
 		r:        a.RedisClient,
 	}
 	// Start consumer loop.
+	ticker := time.NewTicker(a.RedisClient.AssignInterval)
+	defer ticker.Stop()
 loop:
 	for {
 		select {
 		case err := <-watchdogErrC:
 			if err != nil {
 				return fmt.Errorf("error from watchdog: %w", err)
+			}
+		case <-ticker.C:
+			if err := s.flush(ctx); err != nil {
+				return err
 			}
 		case msg, ok := <-msgs:
 			if !ok {
@@ -113,6 +119,10 @@ func (s *assignerState) backOff(ctx context.Context) error {
 }
 
 func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
+	if len(s.window) <= 0 {
+		s.Log.Debug("Empty batch")
+		return true, nil
+	}
 	lastOffset, assignErr := s.r.evalAssignTasks(ctx, s.window)
 	if assignErr == ErrSeek {
 		// Redis is ahead of Kafka.
@@ -132,7 +142,9 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 		// Batch has been processed completely
 		ok = true
 	}
-	s.Log.Debug("Assigning tasks", zap.Int64("assigner.offset", lastOffset))
+	s.Log.Debug("Assigning tasks",
+		zap.Int64("assigner.offset", lastOffset),
+		zap.Bool("assigner.ok", ok))
 	// Move messages from window to channel.
 	for len(s.window) > 0 && s.window[0].Offset <= lastOffset {
 		s.window = s.window[1:]
