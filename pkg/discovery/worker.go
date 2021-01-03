@@ -67,6 +67,7 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 			return true, nil
 		case msg, ok := <-claim.Messages():
 			if !ok {
+				w.Log.Info("Incoming messages channel closed")
 				return false, nil
 			}
 			offset = msg.Offset
