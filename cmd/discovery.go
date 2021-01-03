@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -106,7 +107,7 @@ func runDiscovery(cmd *cobra.Command, _ []string) {
 	// Connect to items store.
 	store := &items.Store{
 		DB:        db,
-		TableName: collection,
+		TableName: strings.Replace(collection, ".", "_", 1) + "_items",
 		PKType:    pkType,
 	}
 	log.Info("Connecting to items store",
