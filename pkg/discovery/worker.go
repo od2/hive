@@ -13,7 +13,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// Worker consumes a Kafka stream of pointers to a collection.
+// Worker consumes a stream of discovered items,
+// writing new items to the task queue.
 type Worker struct {
 	Dedup     dedup.Dedup
 	MaxDelay  time.Duration
@@ -23,6 +24,8 @@ type Worker struct {
 	KafkaSink *KafkaSink
 	Log       *zap.Logger
 }
+
+// TODO Support multiple collections
 
 type KafkaSink struct {
 	Producer sarama.SyncProducer
@@ -117,6 +120,7 @@ readLoop:
 				}
 				messages = append(messages, &sarama.ProducerMessage{
 					Topic: w.KafkaSink.Topic,
+					Key:   sarama.StringEncoder(pointer.Dst.Id),
 					Value: sarama.ByteEncoder(buf),
 				})
 			}

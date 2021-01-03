@@ -165,7 +165,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 		fmt.Println("SessionSerial:", hex.EncodeToString([]byte(partitionKeys.SessionSerial)))
 		sessionSerial, err := redisClient.HGetAll(ctx, partitionKeys.SessionSerial).Result()
 		if err != nil {
-			fmt.Println("\tFailed to dump", err)
+			fmt.Println("\tFailed to dump:", err)
 		} else {
 			for k, v := range sessionSerial {
 				workerID := int64(binary.BigEndian.Uint64([]byte(k)))
@@ -176,7 +176,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 		fmt.Println("SessionCount:", hex.EncodeToString([]byte(partitionKeys.SessionCount)))
 		sessionCount, err := redisClient.HGetAll(ctx, partitionKeys.SessionCount).Result()
 		if err != nil {
-			fmt.Println("\tFailed to dump", err)
+			fmt.Println("\tFailed to dump:", err)
 		} else {
 			for k, v := range sessionCount {
 				workerID := int64(binary.BigEndian.Uint64([]byte(k)))
@@ -187,7 +187,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 		fmt.Println("SessionExpires:", hex.EncodeToString([]byte(partitionKeys.SessionExpires)))
 		sessionExpires, err := redisClient.ZRangeWithScores(ctx, partitionKeys.SessionExpires, 0, -1).Result()
 		if err != nil {
-			fmt.Println("\tFailed to dump", err)
+			fmt.Println("\tFailed to dump:", err)
 		} else {
 			for _, z := range sessionExpires {
 				member := []byte(z.Member.(string))
@@ -200,7 +200,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 		fmt.Println("WorkerQuota:", hex.EncodeToString([]byte(partitionKeys.WorkerQuota)))
 		workerQuota, err := redisClient.HGetAll(ctx, partitionKeys.WorkerQuota).Result()
 		if err != nil {
-			fmt.Println("\tFailed to dump", err)
+			fmt.Println("\tFailed to dump:", err)
 		} else {
 			for k, v := range workerQuota {
 				workerID := int64(binary.BigEndian.Uint64([]byte(k)))
@@ -211,7 +211,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 		fmt.Println("SessionQuota:", hex.EncodeToString([]byte(partitionKeys.SessionQuota)))
 		sessionQuota, err := redisClient.HGetAll(ctx, partitionKeys.SessionQuota).Result()
 		if err != nil {
-			fmt.Println("\tFailed to dump", err)
+			fmt.Println("\tFailed to dump:", err)
 		} else {
 			for k, v := range sessionQuota {
 				key := []byte(k)
@@ -224,7 +224,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 		fmt.Println("Offset:", hex.EncodeToString([]byte(partitionKeys.Offset)))
 		offset, err := redisClient.Get(ctx, partitionKeys.Offset).Result()
 		if err != nil {
-			fmt.Println("\tFailed to dump", err)
+			fmt.Println("\tFailed to dump:", err)
 		} else {
 			fmt.Printf("\t%s\n", offset)
 		}
@@ -232,7 +232,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 		fmt.Println("TaskAssigns:", hex.EncodeToString([]byte(partitionKeys.TaskAssigns)))
 		taskAssigns, err := redisClient.HGetAll(ctx, partitionKeys.TaskAssigns).Result()
 		if err != nil {
-			fmt.Println("\tFailed to dump", err)
+			fmt.Println("\tFailed to dump:", err)
 		} else {
 			for k, v := range taskAssigns {
 				fmt.Printf("\t%s: %s\n", k, v)
@@ -242,7 +242,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 		fmt.Println("ActiveWorkers:", hex.EncodeToString([]byte(partitionKeys.ActiveWorkers)))
 		activeWorkers, err := redisClient.ZRangeWithScores(ctx, partitionKeys.ActiveWorkers, 0, -1).Result()
 		if err != nil {
-			fmt.Println("\tFailed to dump", err)
+			fmt.Println("\tFailed to dump:", err)
 		} else {
 			for _, z := range activeWorkers {
 				member := []byte(z.Member.(string))
@@ -254,7 +254,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 		fmt.Println("WorkerOffsets:", hex.EncodeToString([]byte(partitionKeys.WorkerOffsets)))
 		workerOffsets, err := redisClient.HGetAll(ctx, partitionKeys.WorkerOffsets).Result()
 		if err != nil {
-			fmt.Println("\tFailed to dump", err)
+			fmt.Println("\tFailed to dump:", err)
 		} else {
 			for k, v := range workerOffsets {
 				key := []byte(k)
