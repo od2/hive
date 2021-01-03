@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"github.com/rs/xid"
 	"github.com/spf13/cobra"
 	"go.od2.network/hive/pkg/authgw"
+	"go.od2.network/hive/pkg/njobs"
 	"go.od2.network/hive/pkg/token"
 )
 
@@ -128,4 +131,140 @@ var adminWorkerTokenVerifyCmd = cobra.Command{
 
 func init() {
 	adminWorkerTokenCmd.AddCommand(&adminWorkerTokenVerifyCmd)
+}
+
+var adminAssignerCmd = cobra.Command{
+	Use:   "assigner",
+	Short: "Debug njobs assigner",
+}
+
+func init() {
+	adminCmd.AddCommand(&adminAssignerCmd)
+}
+
+var adminAssignerDumpRedisCmd = cobra.Command{
+	Use:   "dump-redis <topic> <partition>",
+	Short: "Dump Redis content",
+	Args:  cobra.ExactArgs(2),
+	Run: func(cmd *cobra.Command, args []string) {
+		topic := args[0]
+		partition64, err := strconv.ParseInt(args[1], 10, 32)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Invalid partition:", err)
+			os.Exit(1)
+		}
+		partition := int32(partition64)
+		partitionKeys := njobs.NewPartitionKeys(topic, partition)
+		redisClient := redisClientFromEnv()
+		fmt.Println("Topic:", topic)
+		fmt.Println("Partition:", partition)
+		ctx := context.TODO()
+
+		fmt.Println("SessionSerial:", hex.EncodeToString([]byte(partitionKeys.SessionSerial)))
+		sessionSerial, err := redisClient.HGetAll(ctx, partitionKeys.SessionSerial).Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump", err)
+		} else {
+			for k, v := range sessionSerial {
+				workerID := int64(binary.BigEndian.Uint64([]byte(k)))
+				fmt.Printf("\t%d: %s\n", workerID, v)
+			}
+		}
+
+		fmt.Println("SessionCount:", hex.EncodeToString([]byte(partitionKeys.SessionCount)))
+		sessionCount, err := redisClient.HGetAll(ctx, partitionKeys.SessionCount).Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump", err)
+		} else {
+			for k, v := range sessionCount {
+				workerID := int64(binary.BigEndian.Uint64([]byte(k)))
+				fmt.Printf("\t%d: %s\n", workerID, v)
+			}
+		}
+
+		fmt.Println("SessionExpires:", hex.EncodeToString([]byte(partitionKeys.SessionExpires)))
+		sessionExpires, err := redisClient.ZRangeWithScores(ctx, partitionKeys.SessionExpires, 0, -1).Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump", err)
+		} else {
+			for _, z := range sessionExpires {
+				member := []byte(z.Member.(string))
+				worker := binary.BigEndian.Uint64(member[:8])
+				sessionID := binary.BigEndian.Uint64(member[8:])
+				fmt.Printf("\t%d/%d: %f\n", worker, sessionID, z.Score)
+			}
+		}
+
+		fmt.Println("WorkerQuota:", hex.EncodeToString([]byte(partitionKeys.WorkerQuota)))
+		workerQuota, err := redisClient.HGetAll(ctx, partitionKeys.WorkerQuota).Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump", err)
+		} else {
+			for k, v := range workerQuota {
+				workerID := int64(binary.BigEndian.Uint64([]byte(k)))
+				fmt.Printf("\t%d: %s\n", workerID, v)
+			}
+		}
+
+		fmt.Println("SessionQuota:", hex.EncodeToString([]byte(partitionKeys.SessionQuota)))
+		sessionQuota, err := redisClient.HGetAll(ctx, partitionKeys.SessionQuota).Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump", err)
+		} else {
+			for k, v := range sessionQuota {
+				key := []byte(k)
+				worker := binary.BigEndian.Uint64(key[:8])
+				sessionID := binary.BigEndian.Uint64(key[8:])
+				fmt.Printf("\t%d/%d: %s\n", worker, sessionID, v)
+			}
+		}
+
+		fmt.Println("Offset:", hex.EncodeToString([]byte(partitionKeys.Offset)))
+		offset, err := redisClient.Get(ctx, partitionKeys.Offset).Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump", err)
+		} else {
+			fmt.Printf("\t%s\n", offset)
+		}
+
+		fmt.Println("TaskAssigns:", hex.EncodeToString([]byte(partitionKeys.TaskAssigns)))
+		taskAssigns, err := redisClient.HGetAll(ctx, partitionKeys.TaskAssigns).Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump", err)
+		} else {
+			for k, v := range taskAssigns {
+				fmt.Printf("\t%s: %s\n", k, v)
+			}
+		}
+
+		fmt.Println("ActiveWorkers:", hex.EncodeToString([]byte(partitionKeys.ActiveWorkers)))
+		activeWorkers, err := redisClient.ZRangeWithScores(ctx, partitionKeys.ActiveWorkers, 0, -1).Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump", err)
+		} else {
+			for _, z := range activeWorkers {
+				member := []byte(z.Member.(string))
+				worker := binary.BigEndian.Uint64(member[:8])
+				fmt.Printf("\t%d: %f\n", worker, z.Score)
+			}
+		}
+
+		fmt.Println("WorkerOffsets:", hex.EncodeToString([]byte(partitionKeys.WorkerOffsets)))
+		workerOffsets, err := redisClient.HGetAll(ctx, partitionKeys.WorkerOffsets).Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump", err)
+		} else {
+			for k, v := range workerOffsets {
+				key := []byte(k)
+				worker := binary.BigEndian.Uint64(key[:8])
+				fmt.Printf("\t%d: %s\n", worker, v)
+			}
+		}
+
+		// TODO Streams
+	},
+}
+
+func init() {
+	adminAssignerCmd.AddCommand(&adminAssignerDumpRedisCmd)
 }

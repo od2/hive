@@ -18,6 +18,7 @@ import (
 	"go.od2.network/hive/pkg/redistest"
 	"go.od2.network/hive/pkg/token"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -101,7 +102,7 @@ func TestBenchmark(t *testing.T) {
 			},
 		},
 		{
-			name:  "Assign100000_Sessions64_Batch1024",
+			name:  "Assign100000_Sessions64_Batch2048",
 			short: false,
 			opts: &benchOptions{
 				Options: Options{
@@ -149,7 +150,7 @@ func TestBenchmark(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			if !testCase.short {
+			if !testCase.short && testing.Short() {
 				t.Skip("Skipping benchmark in short mode")
 			}
 			runBenchmark(t, testCase.opts)
@@ -224,7 +225,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	interceptor := auth.WorkerAuthInterceptor{
 		Backend: simpleTokenBackend{},
 		Signer:  signer,
-		Log:     zaptest.NewLogger(t),
+		Log:     zaptest.NewLogger(t, zaptest.Level(zap.InfoLevel)),
 	}
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(interceptor.Unary()),

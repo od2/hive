@@ -22,7 +22,7 @@ import (
 type PartitionKeys struct {
 	// Session
 	SessionSerial  string // Hash Map: worker => session serial number
-	SessionCount   string // Int64: Number of active sessions per worker
+	SessionCount   string // Hash Map: worker => number of active sessions
 	SessionExpires string // Sorted Set: {worker, session} by exp_time
 
 	// Flow control
@@ -447,6 +447,7 @@ local function run ()
       return "ERR_SEEK"
     end
     -- Assign each message N times
+	-- TODO Use binary key?
     local tries = redis.call("HINCRBY", key_message_tries, offset, 1)
     for j=tries,replicas,1 do
       -- Pop worker with lowest progress.
@@ -796,6 +797,8 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 		itemID, ok := msg.Values["item"].(string)
 		if !ok {
 			return nil, fmt.Errorf(`unexpected read[%d]["item"]: %#v`, i, msg.Values["item"])
+		} else if itemID == "" {
+			return nil, fmt.Errorf("empty item ID for offset %d", offset)
 		}
 		assignments[i] = &types.Assignment{
 			Locator: &types.ItemLocator{
