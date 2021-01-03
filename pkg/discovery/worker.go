@@ -73,8 +73,8 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 			if err := proto.Unmarshal(msg.Value, pointer); err != nil {
 				return false, fmt.Errorf("invalid Protobuf from Kafka: %w", err)
 			}
-			if !pointer.Check() {
-				return false, fmt.Errorf("pointer from Kafka did not pass validity check")
+			if err := pointer.Check(); err != nil {
+				return false, fmt.Errorf("invalid pointer: %w", err)
 			}
 			pointers = append(pointers, pointer)
 		}
