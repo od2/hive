@@ -80,7 +80,9 @@ func runAssigner(_ *cobra.Command, _ []string) {
 	if err != nil {
 		log.Fatal("Failed to start Kafka partition consumer", zap.Error(err))
 	}
-	defer func() {
+	go func() {
+		<-ctx.Done()
+		log.Info("Context done", zap.Error(ctx.Err()))
 		log.Info("Closing Kafka partition consumer")
 		if err := partitionConsumer.Close(); err != nil {
 			log.Error("Failed to close Kafka partition consumer")
@@ -89,6 +91,7 @@ func runAssigner(_ *cobra.Command, _ []string) {
 	// Spin up assigner.
 	assigner := njobs.Assigner{
 		RedisClient: &rc,
+		Log:         log,
 	}
 	log.Info("Starting assigner")
 	if err := assigner.Run(partitionConsumer.Messages()); err != nil {

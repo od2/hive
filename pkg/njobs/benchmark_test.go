@@ -207,6 +207,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	// Build assigner.
 	assigner := &Assigner{
 		RedisClient: rc,
+		Log:         zaptest.NewLogger(t),
 	}
 	// Build streamer.
 	streamer := &Streamer{

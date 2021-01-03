@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"go.uber.org/zap"
 )
 
 // Assigner implements a Kafka consumer to process tasks.
@@ -21,6 +22,7 @@ import (
 // The offset is stored in Redis (not Kafka), starting from the earliest message.
 type Assigner struct {
 	RedisClient *RedisClient
+	Log         *zap.Logger
 }
 
 // ConsumeClaim starts streaming messages from Kafka in batches.
@@ -130,6 +132,7 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 		// Batch has been processed completely
 		ok = true
 	}
+	s.Log.Debug("Assigning tasks", zap.Int64("assigner.offset", lastOffset))
 	// Move messages from window to channel.
 	for len(s.window) > 0 && s.window[0].Offset <= lastOffset {
 		s.window = s.window[1:]
