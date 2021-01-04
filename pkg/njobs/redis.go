@@ -448,8 +448,8 @@ local function run ()
     end
     -- Assign each message N times
 	-- TODO Use binary key?
-    local tries = redis.call("HINCRBY", key_message_tries, offset, 1)
-    for j=tries,replicas,1 do
+    local tries = tonumber(redis.call("HGET", key_message_tries, offset))
+    for j=tries,replicas-1,1 do
       -- Pop worker with lowest progress.
       local worker_p = redis.call("ZPOPMIN", key_active_workers)
       if #worker_p == 0 then
@@ -476,6 +476,7 @@ local function run ()
       if worker_quota <= 0 then
         redis.call("ZREM", key_active_workers, worker_key)
       end
+	  redis.call("HSET", key_message_tries, offset, tries+1)
     end
     -- Move forward progress.
     progress = offset
