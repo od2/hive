@@ -449,6 +449,9 @@ local function run ()
     -- Assign each message N times
 	-- TODO Use binary key?
     local tries = tonumber(redis.call("HGET", key_message_tries, offset))
+	if not tries then
+	  tries = 0
+	end
     for j=tries,replicas-1,1 do
       -- Pop worker with lowest progress.
       local worker_p = redis.call("ZPOPMIN", key_active_workers)
