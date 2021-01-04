@@ -213,6 +213,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	// Build streamer.
 	streamer := &Streamer{
 		RedisClient: rc,
+		Log:         zaptest.NewLogger(t),
 	}
 	// Build fake network listener.
 	lis := bufconn.Listen(1024 * 1024)

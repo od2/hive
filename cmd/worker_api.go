@@ -127,6 +127,7 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 	}()
 	streamer := njobs.Streamer{
 		RedisClient: &rc,
+		Log:         log.Named("worker"),
 	}
 	types.RegisterAssignmentsServer(server, &streamer)
 	types.RegisterDiscoveryServer(server, &discovery.Handler{

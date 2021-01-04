@@ -13,6 +13,7 @@ import (
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/redistest"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -44,6 +45,7 @@ func TestNJobs(t *testing.T) {
 	// Build task streamer server.
 	streamer := Streamer{
 		RedisClient: &rc,
+		Log:         zaptest.NewLogger(t),
 	}
 	lis := bufconn.Listen(1024 * 1024)
 	defer lis.Close()

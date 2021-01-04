@@ -10,6 +10,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap"
 )
 
 // Streamer accepts connections from a worker and pushes down assignments.
@@ -18,6 +19,7 @@ import (
 // When the worker is absent for too long, the streamer shuts down.
 type Streamer struct {
 	*RedisClient
+	Log *zap.Logger
 
 	types.UnimplementedAssignmentsServer
 }
@@ -36,6 +38,8 @@ func (s *Streamer) OpenAssignmentsStream(
 	if err != nil {
 		return nil, err
 	}
+	s.Log.Info("Success OpenAssignmentsStream()",
+		zap.Int64("worker", worker.WorkerID), zap.Int64("session", session))
 	return &types.OpenAssignmentsStreamResponse{
 		StreamId: session,
 	}, nil
@@ -53,6 +57,8 @@ func (s *Streamer) CloseAssignmentsStream(
 	if err := s.EvalStopSession(ctx, worker.WorkerID, req.StreamId); err != nil {
 		return nil, err
 	}
+	s.Log.Info("Success CloseAssignmentsStream()",
+		zap.Int64("worker", worker.WorkerID), zap.Int64("session", req.StreamId))
 	return &types.CloseAssignmentsStreamResponse{}, nil
 }
 
@@ -128,6 +134,9 @@ func (s *Streamer) StreamAssignments(
 		defer close(sessionErrC)
 		sessionErrC <- session.Run(ctx, assignmentsC)
 	}()
+	log := s.Log.With(zap.Int64("worker", worker.WorkerID), zap.Int64("session", req.StreamId))
+	log.Info("Started StreamAssignments")
+	defer log.Info("Stopped StreamAssignments")
 	// Loop through Redis Streams results.
 	for {
 		select {
@@ -136,6 +145,7 @@ func (s *Streamer) StreamAssignments(
 		case sessionErr := <-sessionErrC:
 			return fmt.Errorf("session terminated: %w", sessionErr)
 		case batch := <-assignmentsC:
+			log.Info("Delivering assignments", zap.Int("num_assignments", len(batch)))
 			if err := outStream.Send(&types.AssignmentBatch{Assignments: batch}); err != nil {
 				return err
 			}
@@ -156,5 +166,9 @@ func (s *Streamer) ReportAssignments(
 	if err != nil {
 		return nil, err
 	}
+	s.Log.Info("Got report",
+		zap.Int64("worker", worker.WorkerID),
+		zap.Int("num_assignments", len(req.Results)),
+		zap.Uint("num_acknowledged", count))
 	return &types.ReportAssignmentsResponse{Acknowledged: int64(count)}, nil
 }
