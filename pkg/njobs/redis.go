@@ -238,8 +238,8 @@ local function remove_worker (worker)
     local offset = string.sub(msg_id, 1, string.find(msg_id, "-") - 1)
     redis.call("XADD", key_results, "*",
       "worker", worker,
-      "status", 2,
       "offset", offset,
+      "status", 2,
       unpack(msg[2]))
   end
   redis.call("ZREM", key_active_workers, worker_key)
@@ -609,11 +609,14 @@ while true do
     return 0
   end
   for i,msg in ipairs(msgs) do
+    local msg_id = msg[1]
+    local offset = string.sub(msg_id, 1, string.find(msg_id, "-") - 1)
     local kvps = parse_kvps(msg[2])
     local exp_time = tonumber(kvps["exp_time"])
     if exp_time < unix_time then
       redis.call("XADD", key_results, "*",
         "worker", worker,
+        "offset", offset,
         "status", 2,
         unpack(msg[2]))
       redis.call("XDEL", key_worker_stream, msg[1])
@@ -641,8 +644,8 @@ func (r *RedisClient) evalExpire(ctx context.Context, worker int64, batch uint) 
 // 2. Stream results
 // Arguments:
 // 1. Worker ID
-// 2. Status
-// 3-N: Kafka offsets to ack
+// 2*N+0: Kafka offset to ack
+// 2*N+1: Status
 // Returns: Number of removed assignments
 //
 // language=Lua
@@ -666,7 +669,9 @@ for i=2,#ARGV,2 do
     count = count + deleted
     -- Republish on results queue.
     redis.call("XADD", key_results, "*",
-      "worker", worker, "offset", offset, "status", status,
+      "worker", worker,
+      "offset", offset,
+      "status", status,
       unpack(xrange[1][2]))
   end
 end
