@@ -264,7 +264,19 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 			}
 		}
 
-		// TODO Streams
+		resultStream, err := redisClient.XRange(ctx, partitionKeys.Results, "-", "+").Result()
+		if err != nil {
+			fmt.Println("\tFailed to dump:", err)
+		} else {
+			buf, err := json.MarshalIndent(resultStream, "\t", "  ")
+			if err != nil {
+				fmt.Println("\tFailed to dump:", err)
+			} else {
+				fmt.Println(string(buf))
+			}
+		}
+
+		// TODO Worker Streams
 	},
 }
 
