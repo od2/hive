@@ -3,6 +3,7 @@ package njobs
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -57,17 +58,29 @@ func (r *Reporter) step(ctx context.Context) error {
 	msgIDs := make([]string, len(stream.Messages))
 	msgs := make([]*sarama.ProducerMessage, len(stream.Messages))
 	for i, msg := range stream.Messages {
-		workerID, ok := msg.Values["worker"].(int64)
+		workerIDStr, ok := msg.Values["worker"].(string)
 		if !ok {
 			return fmt.Errorf("missing worker in result")
 		}
-		statusEnum, ok := msg.Values["status"].(int64)
+		workerID, err := strconv.ParseInt(workerIDStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid worker ID: %s", workerIDStr)
+		}
+		statusEnumStr, ok := msg.Values["status"].(string)
 		if !ok {
 			return fmt.Errorf("missing status in result")
 		}
-		offset, ok := msg.Values["offset"].(int64)
+		statusEnum, err := strconv.ParseInt(statusEnumStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid status: %s", statusEnumStr)
+		}
+		offsetStr, ok := msg.Values["offset"].(string)
 		if !ok {
 			return fmt.Errorf("missing offset in result")
+		}
+		offset, err := strconv.ParseInt(offsetStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid offset: %s", offsetStr)
 		}
 		result := types.AssignmentResult{
 			KafkaPointer: &types.KafkaPointer{
