@@ -49,6 +49,7 @@ func (i *Store) InsertDiscovered(ctx context.Context, pointers []*types.ItemPoin
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	// language=MariaDB
 	const stmt = `INSERT IGNORE INTO %s (item_id, found_t)
 VALUES (:item_id, :found_t);`
@@ -63,7 +64,7 @@ VALUES (:item_id, :found_t);`
 			FoundT: t,
 		}
 	}
-	if _, err = tx.NamedExecContext(ctx, fmt.Sprintf(stmt, i.TableName), inserts); err != nil {
+	if _, err = i.DB.NamedExecContext(ctx, fmt.Sprintf(stmt, i.TableName), inserts); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -79,6 +80,7 @@ func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]stri
 		Isolation: sql.LevelReadCommitted,
 		ReadOnly:  true,
 	})
+	defer tx.Rollback()
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +120,7 @@ func (i *Store) PushTaskResults(ctx context.Context, results []*types.TaskResult
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	// language=MariaDB
 	const stmt = `INSERT INTO %s (item_id, found_t, last_update, updates)
 VALUES (:item_id, :found_t, :last_update, :updates)
