@@ -29,7 +29,6 @@ type Simple struct {
 	// Options
 	Routines      uint            // Number of worker routines
 	Prefetch      uint            // Assignment prefetch count
-	RateLimit     float32         // Assignment per second limit (negative to disable)
 	GracePeriod   time.Duration   // Duration given to shut down stream cleanly
 	FillRate      time.Duration   // Max rate to fill assignments
 	StreamBackoff backoff.BackOff // Stream connection error backoff
