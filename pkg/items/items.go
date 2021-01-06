@@ -80,10 +80,10 @@ func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]stri
 		Isolation: sql.LevelReadCommitted,
 		ReadOnly:  true,
 	})
-	defer tx.Rollback()
 	if err != nil {
 		return nil, err
 	}
+	defer tx.Rollback()
 	const stmt = `SELECT item_id FROM %s WHERE item_id IN (?);`
 	query, args, err := sqlx.In(fmt.Sprintf(stmt, i.TableName), itemIDs)
 	if err != nil {
