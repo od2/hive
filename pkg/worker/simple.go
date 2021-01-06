@@ -95,6 +95,7 @@ func (w *Simple) Run(outerCtx context.Context) error {
 		softCtx:    softCtx,
 		softCancel: softCancel,
 		hardCtx:    hardCtx,
+		needsFill:  1,
 	}
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -133,6 +134,7 @@ func (w *Simple) Run(outerCtx context.Context) error {
 
 // fill continually tells the server to push more tasks.
 func (s *session) fill() error {
+	s.Log.Info("Starting session filler")
 	ticker := time.NewTicker(s.FillRate)
 	defer ticker.Stop()
 	for {
