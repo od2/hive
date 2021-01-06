@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/appctx"
 	"go.od2.network/hive/pkg/dedup"
 	"go.od2.network/hive/pkg/discovery"
@@ -121,8 +121,8 @@ func runDiscovery(cmd *cobra.Command, _ []string) {
 	// Set up SQL dedup.
 	worker := &discovery.Worker{
 		Dedup:     deduper,
-		MaxDelay:  2 * time.Second, // TODO Configurable
-		BatchSize: 32,              // TODO Configurable
+		MaxDelay:  viper.GetDuration(ConfDiscoveryInterval),
+		BatchSize: viper.GetUint(ConfDiscoveryBatch),
 
 		ItemStore: store,
 		KafkaSink: &discovery.KafkaSink{

@@ -40,6 +40,9 @@ const (
 	ConfNJobsResultBatch            = "njobs.result_batch"
 	ConfNJobsResultBackoff          = "njobs.result_backoff"
 
+	ConfDiscoveryInterval = "discovery.interval"
+	ConfDiscoveryBatch    = "discovery.batch"
+
 	ConfSaramaAddrs      = "sarama.addrs"
 	ConfSaramaConfigFile = "sarama.config_file"
 
@@ -74,6 +77,9 @@ func init() {
 	viper.SetDefault(ConfNJobsResultInterval, 3*time.Second)
 	viper.SetDefault(ConfNJobsResultBatch, uint(64))
 	viper.SetDefault(ConfNJobsResultBackoff, 2*time.Second)
+
+	viper.SetDefault(ConfDiscoveryInterval, 2*time.Second)
+	viper.SetDefault(ConfDiscoveryBatch, uint(256))
 
 	viper.SetDefault(ConfSaramaAddrs, []string{})
 	viper.SetDefault(ConfSaramaConfigFile, "")
