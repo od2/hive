@@ -679,7 +679,7 @@ return count
 `
 
 // EvalAck acknowledges a bunch of in-flight Kafka messages by their offsets for a worker.
-func (r *RedisClient) EvalAck(ctx context.Context, worker int64, results []*types.AssignmentResult) (uint, error) {
+func (r *RedisClient) EvalAck(ctx context.Context, worker int64, results []*types.AssignmentReport) (uint, error) {
 	keys := []string{
 		r.PartitionKeys.WorkerQueue(worker),
 		r.PartitionKeys.Results,

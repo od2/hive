@@ -747,7 +747,7 @@ type ReportAssignmentsRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Results []*AssignmentResult `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	Reports []*AssignmentReport `protobuf:"bytes,1,rep,name=reports,proto3" json:"reports,omitempty"`
 }
 
 func (x *ReportAssignmentsRequest) Reset() {
@@ -782,11 +782,66 @@ func (*ReportAssignmentsRequest) Descriptor() ([]byte, []int) {
 	return file_jobs_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *ReportAssignmentsRequest) GetResults() []*AssignmentResult {
+func (x *ReportAssignmentsRequest) GetReports() []*AssignmentReport {
 	if x != nil {
-		return x.Results
+		return x.Reports
 	}
 	return nil
+}
+
+type AssignmentReport struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	KafkaPointer *KafkaPointer `protobuf:"bytes,1,opt,name=kafka_pointer,json=kafkaPointer,proto3" json:"kafka_pointer,omitempty"`
+	Status       TaskStatus    `protobuf:"varint,2,opt,name=status,proto3,enum=od2_network.hive.TaskStatus" json:"status,omitempty"`
+}
+
+func (x *AssignmentReport) Reset() {
+	*x = AssignmentReport{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_jobs_proto_msgTypes[14]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *AssignmentReport) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssignmentReport) ProtoMessage() {}
+
+func (x *AssignmentReport) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_proto_msgTypes[14]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssignmentReport.ProtoReflect.Descriptor instead.
+func (*AssignmentReport) Descriptor() ([]byte, []int) {
+	return file_jobs_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AssignmentReport) GetKafkaPointer() *KafkaPointer {
+	if x != nil {
+		return x.KafkaPointer
+	}
+	return nil
+}
+
+func (x *AssignmentReport) GetStatus() TaskStatus {
+	if x != nil {
+		return x.Status
+	}
+	return TaskStatus_SUCCESS
 }
 
 type AssignmentResult struct {
@@ -794,15 +849,14 @@ type AssignmentResult struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	KafkaPointer *KafkaPointer `protobuf:"bytes,1,opt,name=kafka_pointer,json=kafkaPointer,proto3" json:"kafka_pointer,omitempty"`
-	Status       TaskStatus    `protobuf:"varint,2,opt,name=status,proto3,enum=od2_network.hive.TaskStatus" json:"status,omitempty"`
-	WorkerId     int64         `protobuf:"varint,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	WorkerId int64             `protobuf:"varint,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	Report   *AssignmentReport `protobuf:"bytes,2,opt,name=report,proto3" json:"report,omitempty"`
 }
 
 func (x *AssignmentResult) Reset() {
 	*x = AssignmentResult{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_jobs_proto_msgTypes[14]
+		mi := &file_jobs_proto_msgTypes[15]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -815,7 +869,7 @@ func (x *AssignmentResult) String() string {
 func (*AssignmentResult) ProtoMessage() {}
 
 func (x *AssignmentResult) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_proto_msgTypes[14]
+	mi := &file_jobs_proto_msgTypes[15]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -828,21 +882,7 @@ func (x *AssignmentResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignmentResult.ProtoReflect.Descriptor instead.
 func (*AssignmentResult) Descriptor() ([]byte, []int) {
-	return file_jobs_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *AssignmentResult) GetKafkaPointer() *KafkaPointer {
-	if x != nil {
-		return x.KafkaPointer
-	}
-	return nil
-}
-
-func (x *AssignmentResult) GetStatus() TaskStatus {
-	if x != nil {
-		return x.Status
-	}
-	return TaskStatus_SUCCESS
+	return file_jobs_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *AssignmentResult) GetWorkerId() int64 {
@@ -850,6 +890,13 @@ func (x *AssignmentResult) GetWorkerId() int64 {
 		return x.WorkerId
 	}
 	return 0
+}
+
+func (x *AssignmentResult) GetReport() *AssignmentReport {
+	if x != nil {
+		return x.Report
+	}
+	return nil
 }
 
 type ReportAssignmentsResponse struct {
@@ -863,7 +910,7 @@ type ReportAssignmentsResponse struct {
 func (x *ReportAssignmentsResponse) Reset() {
 	*x = ReportAssignmentsResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_jobs_proto_msgTypes[15]
+		mi := &file_jobs_proto_msgTypes[16]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -876,7 +923,7 @@ func (x *ReportAssignmentsResponse) String() string {
 func (*ReportAssignmentsResponse) ProtoMessage() {}
 
 func (x *ReportAssignmentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jobs_proto_msgTypes[15]
+	mi := &file_jobs_proto_msgTypes[16]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -889,7 +936,7 @@ func (x *ReportAssignmentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportAssignmentsResponse.ProtoReflect.Descriptor instead.
 func (*ReportAssignmentsResponse) Descriptor() ([]byte, []int) {
-	return file_jobs_proto_rawDescGZIP(), []int{15}
+	return file_jobs_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ReportAssignmentsResponse) GetAcknowledged() int64 {
@@ -982,21 +1029,26 @@ var file_jobs_proto_rawDesc = []byte{
 	0x69, 0x6e, 0x74, 0x65, 0x72, 0x52, 0x0c, 0x6b, 0x61, 0x66, 0x6b, 0x61, 0x50, 0x6f, 0x69, 0x6e,
 	0x74, 0x65, 0x72, 0x22, 0x58, 0x0a, 0x18, 0x52, 0x65, 0x70, 0x6f, 0x72, 0x74, 0x41, 0x73, 0x73,
 	0x69, 0x67, 0x6e, 0x6d, 0x65, 0x6e, 0x74, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12,
-	0x3c, 0x0a, 0x07, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b,
+	0x3c, 0x0a, 0x07, 0x72, 0x65, 0x70, 0x6f, 0x72, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b,
 	0x32, 0x22, 0x2e, 0x6f, 0x64, 0x32, 0x5f, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x68,
 	0x69, 0x76, 0x65, 0x2e, 0x41, 0x73, 0x73, 0x69, 0x67, 0x6e, 0x6d, 0x65, 0x6e, 0x74, 0x52, 0x65,
-	0x73, 0x75, 0x6c, 0x74, 0x52, 0x07, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x73, 0x22, 0xaa, 0x01,
-	0x0a, 0x10, 0x41, 0x73, 0x73, 0x69, 0x67, 0x6e, 0x6d, 0x65, 0x6e, 0x74, 0x52, 0x65, 0x73, 0x75,
-	0x6c, 0x74, 0x12, 0x43, 0x0a, 0x0d, 0x6b, 0x61, 0x66, 0x6b, 0x61, 0x5f, 0x70, 0x6f, 0x69, 0x6e,
+	0x70, 0x6f, 0x72, 0x74, 0x52, 0x07, 0x72, 0x65, 0x70, 0x6f, 0x72, 0x74, 0x73, 0x22, 0x8d, 0x01,
+	0x0a, 0x10, 0x41, 0x73, 0x73, 0x69, 0x67, 0x6e, 0x6d, 0x65, 0x6e, 0x74, 0x52, 0x65, 0x70, 0x6f,
+	0x72, 0x74, 0x12, 0x43, 0x0a, 0x0d, 0x6b, 0x61, 0x66, 0x6b, 0x61, 0x5f, 0x70, 0x6f, 0x69, 0x6e,
 	0x74, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x6f, 0x64, 0x32, 0x5f,
 	0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x68, 0x69, 0x76, 0x65, 0x2e, 0x4b, 0x61, 0x66,
 	0x6b, 0x61, 0x50, 0x6f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x52, 0x0c, 0x6b, 0x61, 0x66, 0x6b, 0x61,
 	0x50, 0x6f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x12, 0x34, 0x0a, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75,
 	0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x1c, 0x2e, 0x6f, 0x64, 0x32, 0x5f, 0x6e, 0x65,
 	0x74, 0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x68, 0x69, 0x76, 0x65, 0x2e, 0x54, 0x61, 0x73, 0x6b, 0x53,
-	0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x1b, 0x0a,
-	0x09, 0x77, 0x6f, 0x72, 0x6b, 0x65, 0x72, 0x5f, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03,
-	0x52, 0x08, 0x77, 0x6f, 0x72, 0x6b, 0x65, 0x72, 0x49, 0x64, 0x22, 0x3f, 0x0a, 0x19, 0x52, 0x65,
+	0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x22, 0x6b, 0x0a,
+	0x10, 0x41, 0x73, 0x73, 0x69, 0x67, 0x6e, 0x6d, 0x65, 0x6e, 0x74, 0x52, 0x65, 0x73, 0x75, 0x6c,
+	0x74, 0x12, 0x1b, 0x0a, 0x09, 0x77, 0x6f, 0x72, 0x6b, 0x65, 0x72, 0x5f, 0x69, 0x64, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x03, 0x52, 0x08, 0x77, 0x6f, 0x72, 0x6b, 0x65, 0x72, 0x49, 0x64, 0x12, 0x3a,
+	0x0a, 0x06, 0x72, 0x65, 0x70, 0x6f, 0x72, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22,
+	0x2e, 0x6f, 0x64, 0x32, 0x5f, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x2e, 0x68, 0x69, 0x76,
+	0x65, 0x2e, 0x41, 0x73, 0x73, 0x69, 0x67, 0x6e, 0x6d, 0x65, 0x6e, 0x74, 0x52, 0x65, 0x70, 0x6f,
+	0x72, 0x74, 0x52, 0x06, 0x72, 0x65, 0x70, 0x6f, 0x72, 0x74, 0x22, 0x3f, 0x0a, 0x19, 0x52, 0x65,
 	0x70, 0x6f, 0x72, 0x74, 0x41, 0x73, 0x73, 0x69, 0x67, 0x6e, 0x6d, 0x65, 0x6e, 0x74, 0x73, 0x52,
 	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x22, 0x0a, 0x0c, 0x61, 0x63, 0x6b, 0x6e, 0x6f,
 	0x77, 0x6c, 0x65, 0x64, 0x67, 0x65, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0c, 0x61,
@@ -1067,7 +1119,7 @@ func file_jobs_proto_rawDescGZIP() []byte {
 }
 
 var file_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_jobs_proto_goTypes = []interface{}{
 	(TaskStatus)(0),                           // 0: od2_network.hive.TaskStatus
 	(*TaskResult)(nil),                        // 1: od2_network.hive.TaskResult
@@ -1084,40 +1136,42 @@ var file_jobs_proto_goTypes = []interface{}{
 	(*KafkaPointer)(nil),                      // 12: od2_network.hive.KafkaPointer
 	(*Assignment)(nil),                        // 13: od2_network.hive.Assignment
 	(*ReportAssignmentsRequest)(nil),          // 14: od2_network.hive.ReportAssignmentsRequest
-	(*AssignmentResult)(nil),                  // 15: od2_network.hive.AssignmentResult
-	(*ReportAssignmentsResponse)(nil),         // 16: od2_network.hive.ReportAssignmentsResponse
-	(*ItemLocator)(nil),                       // 17: od2_network.hive.ItemLocator
-	(*timestamp.Timestamp)(nil),               // 18: google.protobuf.Timestamp
-	(*duration.Duration)(nil),                 // 19: google.protobuf.Duration
+	(*AssignmentReport)(nil),                  // 15: od2_network.hive.AssignmentReport
+	(*AssignmentResult)(nil),                  // 16: od2_network.hive.AssignmentResult
+	(*ReportAssignmentsResponse)(nil),         // 17: od2_network.hive.ReportAssignmentsResponse
+	(*ItemLocator)(nil),                       // 18: od2_network.hive.ItemLocator
+	(*timestamp.Timestamp)(nil),               // 19: google.protobuf.Timestamp
+	(*duration.Duration)(nil),                 // 20: google.protobuf.Duration
 }
 var file_jobs_proto_depIdxs = []int32{
-	17, // 0: od2_network.hive.TaskResult.item:type_name -> od2_network.hive.ItemLocator
+	18, // 0: od2_network.hive.TaskResult.item:type_name -> od2_network.hive.ItemLocator
 	0,  // 1: od2_network.hive.TaskResult.status:type_name -> od2_network.hive.TaskStatus
-	18, // 2: od2_network.hive.TaskResult.finish_time:type_name -> google.protobuf.Timestamp
-	19, // 3: od2_network.hive.TaskResult.duration:type_name -> google.protobuf.Duration
+	19, // 2: od2_network.hive.TaskResult.finish_time:type_name -> google.protobuf.Timestamp
+	20, // 3: od2_network.hive.TaskResult.duration:type_name -> google.protobuf.Duration
 	13, // 4: od2_network.hive.AssignmentBatch.assignments:type_name -> od2_network.hive.Assignment
-	17, // 5: od2_network.hive.Assignment.locator:type_name -> od2_network.hive.ItemLocator
+	18, // 5: od2_network.hive.Assignment.locator:type_name -> od2_network.hive.ItemLocator
 	12, // 6: od2_network.hive.Assignment.kafka_pointer:type_name -> od2_network.hive.KafkaPointer
-	15, // 7: od2_network.hive.ReportAssignmentsRequest.results:type_name -> od2_network.hive.AssignmentResult
-	12, // 8: od2_network.hive.AssignmentResult.kafka_pointer:type_name -> od2_network.hive.KafkaPointer
-	0,  // 9: od2_network.hive.AssignmentResult.status:type_name -> od2_network.hive.TaskStatus
-	2,  // 10: od2_network.hive.Assignments.OpenAssignmentsStream:input_type -> od2_network.hive.OpenAssignmentsStreamRequest
-	4,  // 11: od2_network.hive.Assignments.CloseAssignmentsStream:input_type -> od2_network.hive.CloseAssignmentsStreamRequest
-	9,  // 12: od2_network.hive.Assignments.GetPendingAssignmentsCount:input_type -> od2_network.hive.GetPendingAssignmentsCountRequest
-	6,  // 13: od2_network.hive.Assignments.WantAssignments:input_type -> od2_network.hive.WantAssignmentsRequest
-	8,  // 14: od2_network.hive.Assignments.StreamAssignments:input_type -> od2_network.hive.StreamAssignmentsRequest
-	14, // 15: od2_network.hive.Assignments.ReportAssignments:input_type -> od2_network.hive.ReportAssignmentsRequest
-	3,  // 16: od2_network.hive.Assignments.OpenAssignmentsStream:output_type -> od2_network.hive.OpenAssignmentsStreamResponse
-	5,  // 17: od2_network.hive.Assignments.CloseAssignmentsStream:output_type -> od2_network.hive.CloseAssignmentsStreamResponse
-	10, // 18: od2_network.hive.Assignments.GetPendingAssignmentsCount:output_type -> od2_network.hive.PendingAssignmentsCount
-	7,  // 19: od2_network.hive.Assignments.WantAssignments:output_type -> od2_network.hive.WantAssignmentsResponse
-	11, // 20: od2_network.hive.Assignments.StreamAssignments:output_type -> od2_network.hive.AssignmentBatch
-	16, // 21: od2_network.hive.Assignments.ReportAssignments:output_type -> od2_network.hive.ReportAssignmentsResponse
-	16, // [16:22] is the sub-list for method output_type
-	10, // [10:16] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	15, // 7: od2_network.hive.ReportAssignmentsRequest.reports:type_name -> od2_network.hive.AssignmentReport
+	12, // 8: od2_network.hive.AssignmentReport.kafka_pointer:type_name -> od2_network.hive.KafkaPointer
+	0,  // 9: od2_network.hive.AssignmentReport.status:type_name -> od2_network.hive.TaskStatus
+	15, // 10: od2_network.hive.AssignmentResult.report:type_name -> od2_network.hive.AssignmentReport
+	2,  // 11: od2_network.hive.Assignments.OpenAssignmentsStream:input_type -> od2_network.hive.OpenAssignmentsStreamRequest
+	4,  // 12: od2_network.hive.Assignments.CloseAssignmentsStream:input_type -> od2_network.hive.CloseAssignmentsStreamRequest
+	9,  // 13: od2_network.hive.Assignments.GetPendingAssignmentsCount:input_type -> od2_network.hive.GetPendingAssignmentsCountRequest
+	6,  // 14: od2_network.hive.Assignments.WantAssignments:input_type -> od2_network.hive.WantAssignmentsRequest
+	8,  // 15: od2_network.hive.Assignments.StreamAssignments:input_type -> od2_network.hive.StreamAssignmentsRequest
+	14, // 16: od2_network.hive.Assignments.ReportAssignments:input_type -> od2_network.hive.ReportAssignmentsRequest
+	3,  // 17: od2_network.hive.Assignments.OpenAssignmentsStream:output_type -> od2_network.hive.OpenAssignmentsStreamResponse
+	5,  // 18: od2_network.hive.Assignments.CloseAssignmentsStream:output_type -> od2_network.hive.CloseAssignmentsStreamResponse
+	10, // 19: od2_network.hive.Assignments.GetPendingAssignmentsCount:output_type -> od2_network.hive.PendingAssignmentsCount
+	7,  // 20: od2_network.hive.Assignments.WantAssignments:output_type -> od2_network.hive.WantAssignmentsResponse
+	11, // 21: od2_network.hive.Assignments.StreamAssignments:output_type -> od2_network.hive.AssignmentBatch
+	17, // 22: od2_network.hive.Assignments.ReportAssignments:output_type -> od2_network.hive.ReportAssignmentsResponse
+	17, // [17:23] is the sub-list for method output_type
+	11, // [11:17] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_jobs_proto_init() }
@@ -1296,7 +1350,7 @@ func file_jobs_proto_init() {
 			}
 		}
 		file_jobs_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*AssignmentResult); i {
+			switch v := v.(*AssignmentReport); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1308,6 +1362,18 @@ func file_jobs_proto_init() {
 			}
 		}
 		file_jobs_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*AssignmentResult); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_jobs_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ReportAssignmentsResponse); i {
 			case 0:
 				return &v.state
@@ -1326,7 +1392,7 @@ func file_jobs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_jobs_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

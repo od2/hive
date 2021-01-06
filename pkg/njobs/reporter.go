@@ -83,11 +83,13 @@ func (r *Reporter) step(ctx context.Context) error {
 			return fmt.Errorf("invalid offset: %s", offsetStr)
 		}
 		result := types.AssignmentResult{
-			KafkaPointer: &types.KafkaPointer{
-				Partition: 0, // TODO
-				Offset:    offset,
+			Report: &types.AssignmentReport{
+				KafkaPointer: &types.KafkaPointer{
+					Partition: 0, // TODO
+					Offset:    offset,
+				},
+				Status: types.TaskStatus(statusEnum),
 			},
-			Status:   types.TaskStatus(statusEnum),
 			WorkerId: workerID,
 		}
 		value, err := proto.Marshal(&result)

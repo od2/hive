@@ -17,6 +17,8 @@ import (
 	"google.golang.org/grpc"
 )
 
+// TODO Allow surrendering quota
+
 var workerAPICmd = cobra.Command{
 	Use:   "worker-api",
 	Short: "Run worker API server",

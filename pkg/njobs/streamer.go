@@ -81,6 +81,8 @@ func (s *Streamer) WantAssignments(
 	}, nil
 }
 
+// GetPendingAssignmentCount returns the number of task assignments
+// that are not delivered to the client yet, but which are queued for the near future.
 func (s *Streamer) GetPendingAssignmentsCount(
 	ctx context.Context,
 	req *types.GetPendingAssignmentsCountRequest,
@@ -162,13 +164,13 @@ func (s *Streamer) ReportAssignments(
 	if err != nil {
 		return nil, err
 	}
-	count, err := s.EvalAck(ctx, worker.WorkerID, req.Results)
+	count, err := s.EvalAck(ctx, worker.WorkerID, req.Reports)
 	if err != nil {
 		return nil, err
 	}
 	s.Log.Info("Got report",
 		zap.Int64("worker", worker.WorkerID),
-		zap.Int("num_assignments", len(req.Results)),
+		zap.Int("num_assignments", len(req.Reports)),
 		zap.Uint("num_acknowledged", count))
 	return &types.ReportAssignmentsResponse{Acknowledged: int64(count)}, nil
 }

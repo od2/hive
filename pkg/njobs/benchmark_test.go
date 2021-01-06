@@ -387,15 +387,15 @@ func (stack *benchStack) runClient(ctx context.Context, workerID int64) {
 		}
 		require.NoError(stack.T, err)
 		atomic.AddInt64(&stack.batches, 1)
-		results := make([]*types.AssignmentResult, len(batch.Assignments))
+		reports := make([]*types.AssignmentReport, len(batch.Assignments))
 		for i, a := range batch.Assignments {
-			results[i] = &types.AssignmentResult{
+			reports[i] = &types.AssignmentReport{
 				KafkaPointer: a.KafkaPointer,
 				Status:       types.TaskStatus_SUCCESS,
 			}
 		}
 		// Acknowledge assignments.
-		_, err = client.ReportAssignments(ctx, &types.ReportAssignmentsRequest{Results: results})
+		_, err = client.ReportAssignments(ctx, &types.ReportAssignmentsRequest{Reports: reports})
 		if errStatus, ok := status.FromError(err); ok && errStatus.Code() == codes.Canceled {
 			break // cancel gracefully
 		}

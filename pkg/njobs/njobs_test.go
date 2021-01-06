@@ -154,7 +154,7 @@ func TestNJobs(t *testing.T) {
 	require.NoError(t, assignStream2.CloseSend())
 
 	// Acknowledge a few messages.
-	results := make([]*types.AssignmentResult, 4)
+	reports := make([]*types.AssignmentReport, 4)
 	for i, a := range batch.Assignments[:4] {
 		var status types.TaskStatus
 		if i%2 == 0 {
@@ -162,13 +162,13 @@ func TestNJobs(t *testing.T) {
 		} else {
 			status = types.TaskStatus_CLIENT_FAILURE
 		}
-		results[i] = &types.AssignmentResult{
+		reports[i] = &types.AssignmentReport{
 			KafkaPointer: a.KafkaPointer,
 			Status:       status,
 		}
 	}
 	_, err = client.ReportAssignments(ctx, &types.ReportAssignmentsRequest{
-		Results: results,
+		Reports: reports,
 	})
 	require.NoError(t, err)
 
