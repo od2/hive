@@ -55,9 +55,6 @@ type session struct {
 	needsFill int32 // flag whether fill algorithm needs to run [atomic]
 }
 
-// Lock is a no-op. It tells the Go compiler that session can't be copied.
-func (*session) Lock() {}
-
 // Run runs the worker until the context is cancelled.
 // After the context is cancelled, the outstanding items are worked off before the function returns.
 // The function only returns an error if anything goes wrong during startup,
@@ -79,7 +76,7 @@ func (w *Simple) Run(outerCtx context.Context) error {
 	}
 	w.Log.Info("Opened stream")
 	defer func() {
-		_, err := w.Assignments.CloseAssignmentsStream(softCtx, &types.CloseAssignmentsStreamRequest{
+		_, err := w.Assignments.CloseAssignmentsStream(hardCtx, &types.CloseAssignmentsStreamRequest{
 			StreamId: openStream.StreamId,
 		})
 		if err != nil {
@@ -135,6 +132,7 @@ func (w *Simple) Run(outerCtx context.Context) error {
 // fill continually tells the server to push more tasks.
 func (s *session) fill() error {
 	s.Log.Info("Starting session filler")
+	defer s.Log.Info("Stopping session filler")
 	ticker := time.NewTicker(s.FillRate)
 	defer ticker.Stop()
 	for {
