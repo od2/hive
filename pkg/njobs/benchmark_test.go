@@ -12,17 +12,18 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/cenkalti/backoff/v4"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/redistest"
 	"go.od2.network/hive/pkg/token"
 	"go.od2.network/hive/pkg/types"
+	"go.od2.network/hive/pkg/worker"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -38,7 +39,7 @@ func TestBenchmark(t *testing.T) {
 			short: true,
 			opts: &benchOptions{
 				Options:  DefaultOptions,
-				Workers:  1,
+				Workers:  2 * DefaultOptions.TaskAssignments,
 				Sessions: 1,
 				Assigns:  2,
 				QoS:      4,
@@ -173,6 +174,7 @@ type benchOptions struct {
 type benchStack struct {
 	// Environment
 	T           *testing.T
+	Log         *zap.Logger
 	Redis       *redistest.Redis
 	RedisClient *RedisClient
 	opts        *benchOptions
@@ -186,7 +188,6 @@ type benchStack struct {
 	listener *bufconn.Listener
 	server   *grpc.Server
 	// Status
-	batches int64
 	assigns int64
 }
 
@@ -213,7 +214,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	// Build streamer.
 	streamer := &Streamer{
 		RedisClient: rc,
-		Log:         zaptest.NewLogger(t),
+		Log:         zap.NewNop(),
 	}
 	// Build fake network listener.
 	lis := bufconn.Listen(1024 * 1024)
@@ -237,6 +238,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	return &benchStack{
 		// Environment
 		T:           t,
+		Log:         zaptest.NewLogger(t),
 		Redis:       redis,
 		RedisClient: rc,
 		signer:      signer,
@@ -249,7 +251,6 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 		assigner: assigner,
 		listener: lis,
 		server:   server,
-		batches:  0,
 		assigns:  0,
 	}
 }
@@ -317,9 +318,7 @@ func runBenchmark(t *testing.T, opts *benchOptions) {
 			case <-stack.innerCtx.Done():
 				return
 			case <-ticker.C:
-				t.Logf("Stats: assigns=%d batches=%d",
-					atomic.LoadInt64(&stack.assigns),
-					atomic.LoadInt64(&stack.batches))
+				t.Logf("Stats: assigns=%d", atomic.LoadInt64(&stack.assigns))
 			}
 		}
 	}()
@@ -333,79 +332,31 @@ func runBenchmark(t *testing.T, opts *benchOptions) {
 func (stack *benchStack) runClient(ctx context.Context, workerID int64) {
 	client, closer := stack.newClient(workerID)
 	defer closer.Close()
-	// Grab stream.
-	streamRes, err := client.OpenAssignmentsStream(stack.ctx, &types.OpenAssignmentsStreamRequest{})
-	require.NoError(stack.T, err)
-	defer func() {
-		_, err = client.CloseAssignmentsStream(stack.ctx,
-			&types.CloseAssignmentsStreamRequest{StreamId: streamRes.StreamId})
-		require.NoError(stack.T, err)
-	}()
-	var clientPending int32
-	// Keep the quota count up.
-	go func() {
-		t := time.NewTicker(time.Second)
-		defer t.Stop()
-		for {
-			// Check if we have enough assignments pending.
-			pendingRes, err := client.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{StreamId: streamRes.StreamId})
-			if errStatus, ok := status.FromError(err); ok && errStatus.Code() == codes.Canceled {
-				break // cancel gracefully
-			}
-			require.NoError(stack.T, err)
-			totalPending := pendingRes.Watermark + atomic.LoadInt32(&clientPending)
-			if totalPending >= int32(stack.opts.QoS) {
-				continue
-			}
-			// We need more assignments.
-			_, err = client.WantAssignments(ctx, &types.WantAssignmentsRequest{
-				StreamId:     streamRes.StreamId,
-				AddWatermark: int32(stack.opts.QoS) - totalPending,
-			})
-			if errStatus, ok := status.FromError(err); ok && errStatus.Code() == codes.Canceled {
-				break // cancel gracefully
-			}
-			require.NoError(stack.T, err)
-			// Sleep a bit.
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				break // continue
-			}
-		}
-	}()
-	// Process items.
-	stream, err := client.StreamAssignments(stack.innerCtx,
-		&types.StreamAssignmentsRequest{StreamId: streamRes.StreamId})
-	require.NoError(stack.T, err)
-	for {
-		// Got new assignments.
-		batch, err := stream.Recv()
-		if errStatus, ok := status.FromError(err); ok && errStatus.Code() == codes.Canceled {
-			break // cancel gracefully
-		}
-		require.NoError(stack.T, err)
-		atomic.AddInt64(&stack.batches, 1)
-		reports := make([]*types.AssignmentReport, len(batch.Assignments))
-		for i, a := range batch.Assignments {
-			reports[i] = &types.AssignmentReport{
-				KafkaPointer: a.KafkaPointer,
-				Status:       types.TaskStatus_SUCCESS,
-			}
-		}
-		// Acknowledge assignments.
-		_, err = client.ReportAssignments(ctx, &types.ReportAssignmentsRequest{Reports: reports})
-		if errStatus, ok := status.FromError(err); ok && errStatus.Code() == codes.Canceled {
-			break // cancel gracefully
-		}
-		require.NoError(stack.T, err)
-		// Benchmark progress
-		totalAssigns := atomic.AddInt64(&stack.assigns, int64(len(batch.Assignments)))
-		if totalAssigns > int64(stack.opts.Assigns) {
-			stack.innerCancel()
-		}
+
+	var simpleWorker = &worker.Simple{
+		Assignments:   client,
+		Log:           zap.NewNop(),
+		Handler:       &noopHandler{stack},
+		Routines:      1,
+		Prefetch:      4,
+		GracePeriod:   10 * time.Second,
+		FillRate:      1, // fill as fast as possible
+		StreamBackoff: new(backoff.StopBackOff),
+		APIBackoff:    new(backoff.StopBackOff),
 	}
+	assert.NoError(stack.T, simpleWorker.Run(ctx))
+}
+
+type noopHandler struct {
+	*benchStack
+}
+
+// WorkAssignment does nothing and returns TaskStatus_SUCCESS.
+func (n *noopHandler) WorkAssignment(context.Context, *types.Assignment) types.TaskStatus {
+	if atomic.AddInt64(&n.assigns, 1) > int64(n.opts.Assigns) {
+		n.cancel()
+	}
+	return types.TaskStatus_SUCCESS
 }
 
 func (stack *benchStack) newClient(workerID int64) (types.AssignmentsClient, io.Closer) {

@@ -133,14 +133,19 @@ func (w *Simple) Run(outerCtx context.Context) error {
 func (s *session) fill() error {
 	s.Log.Info("Starting session filler")
 	defer s.Log.Info("Stopping session filler")
-	ticker := time.NewTicker(s.FillRate)
+	ticker := time.NewTicker(1)
 	defer ticker.Stop()
+	loopBack := make(chan struct{}, 1)
+	defer close(loopBack)
+	loopBack <- struct{}{}
 	for {
 		// Wait for something to happen.
 		select {
 		case <-s.softCtx.Done():
 			return nil
 		case <-ticker.C:
+			break // select
+		case <-loopBack:
 			break // select
 		}
 		// Check if action needs to be taken.
