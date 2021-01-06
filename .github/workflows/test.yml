@@ -4,14 +4,19 @@ jobs:
   unit_test:
     runs-on: ubuntu-20.04
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: '50'
+    - uses: mstachniuk/ci-skip@v1
+      with:
+        fail-fast: true
     - name: Install Go
       uses: actions/setup-go@v2
       with:
         go-version: 1.15.x
     - name: Install Redis
       run: sudo apt-get install redis-server
-    - name: Checkout code
-      uses: actions/checkout@v2
     - uses: actions/cache@v2
       with:
         path: |

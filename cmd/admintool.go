@@ -264,6 +264,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 			}
 		}
 
+		fmt.Println("Results:", hex.EncodeToString([]byte(partitionKeys.Results)))
 		resultStream, err := redisClient.XRange(ctx, partitionKeys.Results, "-", "+").Result()
 		if err != nil {
 			fmt.Println("\tFailed to dump:", err)
@@ -272,6 +273,7 @@ var adminAssignerDumpRedisCmd = cobra.Command{
 			if err != nil {
 				fmt.Println("\tFailed to dump:", err)
 			} else {
+				fmt.Print("\t")
 				fmt.Println(string(buf))
 			}
 		}
