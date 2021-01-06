@@ -22,7 +22,7 @@ import (
 type PartitionKeys struct {
 	// Session
 	SessionSerial  string // Hash Map: worker => session serial number
-	SessionCount   string // Int64: Number of active sessions per worker
+	SessionCount   string // Hash Map: worker => number of active sessions
 	SessionExpires string // Sorted Set: {worker, session} by exp_time
 
 	// Flow control
@@ -238,8 +238,8 @@ local function remove_worker (worker)
     local offset = string.sub(msg_id, 1, string.find(msg_id, "-") - 1)
     redis.call("XADD", key_results, "*",
       "worker", worker,
-      "status", 2,
       "offset", offset,
+      "status", 2,
       unpack(msg[2]))
   end
   redis.call("ZREM", key_active_workers, worker_key)
@@ -447,8 +447,12 @@ local function run ()
       return "ERR_SEEK"
     end
     -- Assign each message N times
-    local tries = redis.call("HINCRBY", key_message_tries, offset, 1)
-    for j=tries,replicas,1 do
+	-- TODO Use binary key?
+    local tries = tonumber(redis.call("HGET", key_message_tries, offset))
+	if not tries then
+	  tries = 0
+	end
+    for j=tries,replicas-1,1 do
       -- Pop worker with lowest progress.
       local worker_p = redis.call("ZPOPMIN", key_active_workers)
       if #worker_p == 0 then
@@ -475,6 +479,7 @@ local function run ()
       if worker_quota <= 0 then
         redis.call("ZREM", key_active_workers, worker_key)
       end
+	  redis.call("HSET", key_message_tries, offset, tries+1)
     end
     -- Move forward progress.
     progress = offset
@@ -604,11 +609,14 @@ while true do
     return 0
   end
   for i,msg in ipairs(msgs) do
+    local msg_id = msg[1]
+    local offset = string.sub(msg_id, 1, string.find(msg_id, "-") - 1)
     local kvps = parse_kvps(msg[2])
     local exp_time = tonumber(kvps["exp_time"])
     if exp_time < unix_time then
       redis.call("XADD", key_results, "*",
         "worker", worker,
+        "offset", offset,
         "status", 2,
         unpack(msg[2]))
       redis.call("XDEL", key_worker_stream, msg[1])
@@ -618,13 +626,6 @@ while true do
   end
 end
 `
-
-// Expiration marks a worker task assignment as expired.
-type Expiration struct {
-	Worker int64
-	Offset int64 // Kafka
-	ItemID int64
-}
 
 // evalExpire pops expired items form a worker stream.
 // It returns the timestamp when the next expiry happens, or 0 if unknown.
@@ -643,8 +644,8 @@ func (r *RedisClient) evalExpire(ctx context.Context, worker int64, batch uint) 
 // 2. Stream results
 // Arguments:
 // 1. Worker ID
-// 2. Status
-// 3-N: Kafka offsets to ack
+// 2*N+0: Kafka offset to ack
+// 2*N+1: Status
 // Returns: Number of removed assignments
 //
 // language=Lua
@@ -668,7 +669,9 @@ for i=2,#ARGV,2 do
     count = count + deleted
     -- Republish on results queue.
     redis.call("XADD", key_results, "*",
-      "worker", worker, "offset", offset, "status", status,
+      "worker", worker,
+      "offset", offset,
+      "status", status,
       unpack(xrange[1][2]))
   end
 end
@@ -676,7 +679,7 @@ return count
 `
 
 // EvalAck acknowledges a bunch of in-flight Kafka messages by their offsets for a worker.
-func (r *RedisClient) EvalAck(ctx context.Context, worker int64, results []*types.AssignmentResult) (uint, error) {
+func (r *RedisClient) EvalAck(ctx context.Context, worker int64, results []*types.AssignmentReport) (uint, error) {
 	keys := []string{
 		r.PartitionKeys.WorkerQueue(worker),
 		r.PartitionKeys.Results,
@@ -803,6 +806,8 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 		itemID, ok := msg.Values["item"].(string)
 		if !ok {
 			return nil, fmt.Errorf(`unexpected read[%d]["item"]: %#v`, i, msg.Values["item"])
+		} else if itemID == "" {
+			return nil, fmt.Errorf("empty item ID for offset %d", offset)
 		}
 		assignments[i] = &types.Assignment{
 			Locator: &types.ItemLocator{

@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"go.od2.network/hive/pkg/authgw"
+	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap"
 )
 
 // Streamer accepts connections from a worker and pushes down assignments.
@@ -18,6 +19,7 @@ import (
 // When the worker is absent for too long, the streamer shuts down.
 type Streamer struct {
 	*RedisClient
+	Log *zap.Logger
 
 	types.UnimplementedAssignmentsServer
 }
@@ -27,7 +29,7 @@ func (s *Streamer) OpenAssignmentsStream(
 	ctx context.Context,
 	_ *types.OpenAssignmentsStreamRequest,
 ) (*types.OpenAssignmentsStreamResponse, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -36,6 +38,8 @@ func (s *Streamer) OpenAssignmentsStream(
 	if err != nil {
 		return nil, err
 	}
+	s.Log.Info("Success OpenAssignmentsStream()",
+		zap.Int64("worker", worker.WorkerID), zap.Int64("session", session))
 	return &types.OpenAssignmentsStreamResponse{
 		StreamId: session,
 	}, nil
@@ -46,13 +50,15 @@ func (s *Streamer) CloseAssignmentsStream(
 	ctx context.Context,
 	req *types.CloseAssignmentsStreamRequest,
 ) (*types.CloseAssignmentsStreamResponse, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.EvalStopSession(ctx, worker.WorkerID, req.StreamId); err != nil {
 		return nil, err
 	}
+	s.Log.Info("Success CloseAssignmentsStream()",
+		zap.Int64("worker", worker.WorkerID), zap.Int64("session", req.StreamId))
 	return &types.CloseAssignmentsStreamResponse{}, nil
 }
 
@@ -61,7 +67,7 @@ func (s *Streamer) WantAssignments(
 	ctx context.Context,
 	req *types.WantAssignmentsRequest,
 ) (*types.WantAssignmentsResponse, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +81,13 @@ func (s *Streamer) WantAssignments(
 	}, nil
 }
 
+// GetPendingAssignmentCount returns the number of task assignments
+// that are not delivered to the client yet, but which are queued for the near future.
 func (s *Streamer) GetPendingAssignmentsCount(
 	ctx context.Context,
 	req *types.GetPendingAssignmentsCountRequest,
 ) (*types.PendingAssignmentsCount, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +111,7 @@ func (s *Streamer) StreamAssignments(
 	ctx := outStream.Context()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -128,6 +136,9 @@ func (s *Streamer) StreamAssignments(
 		defer close(sessionErrC)
 		sessionErrC <- session.Run(ctx, assignmentsC)
 	}()
+	log := s.Log.With(zap.Int64("worker", worker.WorkerID), zap.Int64("session", req.StreamId))
+	log.Info("Started StreamAssignments")
+	defer log.Info("Stopped StreamAssignments")
 	// Loop through Redis Streams results.
 	for {
 		select {
@@ -136,6 +147,7 @@ func (s *Streamer) StreamAssignments(
 		case sessionErr := <-sessionErrC:
 			return fmt.Errorf("session terminated: %w", sessionErr)
 		case batch := <-assignmentsC:
+			log.Info("Delivering assignments", zap.Int("num_assignments", len(batch)))
 			if err := outStream.Send(&types.AssignmentBatch{Assignments: batch}); err != nil {
 				return err
 			}
@@ -148,13 +160,17 @@ func (s *Streamer) ReportAssignments(
 	ctx context.Context,
 	req *types.ReportAssignmentsRequest,
 ) (*types.ReportAssignmentsResponse, error) {
-	worker, err := authgw.FromContext(ctx)
+	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	count, err := s.EvalAck(ctx, worker.WorkerID, req.Results)
+	count, err := s.EvalAck(ctx, worker.WorkerID, req.Reports)
 	if err != nil {
 		return nil, err
 	}
+	s.Log.Info("Got report",
+		zap.Int64("worker", worker.WorkerID),
+		zap.Int("num_assignments", len(req.Reports)),
+		zap.Uint("num_acknowledged", count))
 	return &types.ReportAssignmentsResponse{Acknowledged: int64(count)}, nil
 }

@@ -1,5 +1,4 @@
 local ffi = require "ffi"
-
 ffi.cdef[[
 /* JV parsing */
 struct jv_refcnt;
@@ -25,57 +24,77 @@ typedef enum {
 } jv_kind;
 
 jv jv_parse_sized(const char* string, int length);
+jv jv_string_sized(const char*, int);
+jv jv_copy(jv);
 void jv_free(jv);
 
 jv_kind jv_get_kind(jv);
+
 int jv_string_length_bytes(jv);
 const char* jv_string_value(jv);
 
-/* JQ processing */
-struct jq_state;
-typedef struct jq_state jq_state;
+double jv_number_value(jv);
 
-jq_state *jq_init(void);
-void jq_teardown(jq_state **);
-
-int jq_compile(jq_state *, const char *);
-
-void jq_start(jq_state *, jv value, int);
-jv jq_next(jq_state *);
+jv jv_object_get(jv object, jv key);
 ]]
 
 local jq = ffi.load("jq.so.1")
 
-local _M = {}
-
-function _M.extract_login (json)
-  -- Create new jq context
-  local ctx = jq.jq_init()
-  assert(ctx ~= 0)
-  -- Compile jq filter
-  local filter = jq.jq_compile(ctx, ".login")
-  -- Parse input
-  local parsed = jq.jv_parse_sized(json, #json)
-  local parsed_kind = jq.jv_get_kind(parsed)
-  if parsed_kind ~= jq.JV_KIND_OBJECT then
-    return nil, "invalid JSON"
-  end
-  -- Process input through filter
-  jq.jq_start(ctx, parsed, 0)
-  local result = jq.jq_next(ctx)
-  local result_kind = jq.jv_get_kind(result)
-  if result_kind ~= jq.JV_KIND_STRING then
-    return nil, "invalid result"
-  end
-  -- Read input to string
-  local result_len = jq.jv_string_length_bytes(result) 
-  local result_chars = jq.jv_string_value(result)
-  local result_str = ffi.string(result_chars, result_len)
-  -- Teardown jq context
-  local ctx_arr = ffi.new("jq_state *[1]")
-  ctx_arr[0] = ctx
-  jq.jq_teardown(ctx_arr)
-  return result_str, nil
+local jv_meta = {}
+local jv_class = {}
+function jv_meta.__index (obj, key)
+  return jv_class[key]
 end
 
-return _M
+local function jv_wrap(val)
+  local val_t = {val}
+  setmetatable(val_t, jv_meta)
+  local val = ffi.gc(val, function (obj) jq.jv_free(obj) end)
+  return val_t
+end
+
+function jv_class.kind(obj)
+  return jq.jv_get_kind(obj[1])
+end
+function jv_class.string(obj)
+  if obj:kind() ~= jq.JV_KIND_STRING then
+    return nil
+  end
+  local obj_copy = jq.jv_copy(obj[1])
+  local str_len = jq.jv_string_length_bytes(obj_copy)
+  local str_val = jq.jv_string_value(obj_copy)
+  return ffi.string(str_val, str_len)
+end
+function jv_class.object_get(obj, key)
+  if obj:kind() ~= jq.JV_KIND_OBJECT then
+    return nil
+  end
+  local key_jv = jq.jv_string_sized(key, #key)
+  local obj_copy = jq.jv_copy(obj[1])
+  local val = jq.jv_object_get(obj_copy, key_jv)
+  return jv_wrap(val)
+end
+function jv_class.number(obj)
+  if obj:kind() ~= jq.JV_KIND_NUMBER then
+    return nil
+  end
+  local obj_copy = jq.jv_copy(obj[1])
+  return jq.jv_number_value(obj_copy)
+end
+
+local function jv_parse (json)
+  local val = jq.jv_parse_sized(json, #json)
+  return jv_wrap(val)
+end
+
+local function extract_login (json)
+  local parsed = jv_parse(json)
+  if parsed:kind() ~= jq.JV_KIND_OBJECT then
+    return nil, "invalid JSON"
+  end
+  local result = {
+    login = parsed:object_get("login"):string(),
+    id    = parsed:object_get("id"):number(),
+  }
+  return result, nil
+end

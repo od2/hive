@@ -12,7 +12,6 @@ import (
 // Confirmed expiration events are written out to Redis Streams.
 type Watchdog struct {
 	*RedisClient
-	Options *Options
 }
 
 // Run starts a loop that processes expirations.

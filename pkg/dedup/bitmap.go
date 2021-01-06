@@ -1,4 +1,4 @@
-package redisdedup
+package dedup
 
 import (
 	"context"

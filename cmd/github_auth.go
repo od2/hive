@@ -1,15 +1,12 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"net/http"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/cachegc"
 	"go.uber.org/zap"
 )
@@ -42,70 +39,18 @@ func runGitHubAuth(cmd *cobra.Command, _ []string) {
 		panic("failed to create cache: " + err.Error())
 	}
 	cache := cachegc.NewCache(baseCache, viper.GetDuration(ConfAuthgwCacheTTL))
-	// Build HTTP handler.
-	handler := http.HandlerFunc(func(wr http.ResponseWriter, req *http.Request) {
-		log := log.With(zap.String("remote_addr", req.RemoteAddr))
-		body, err := ioutil.ReadAll(req.Body)
-		if err != nil {
-			log.Error("Failed to read request body", zap.Error(err))
-			return
-		}
-		wr.Header().Set("Content-Type", "text/plain")
-		entry, ok := cache.Get(string(body))
-		if ok {
-			login := entry.(string)
-			log.Info("Catch hit", zap.String("user", login))
-			wr.WriteHeader(http.StatusOK)
-			_, _ = wr.Write([]byte(login))
-			return
-		}
-		login, err := fetchLogin(req.Context(), string(body))
-		if err != nil {
-			log.Error("Failed to fetch", zap.Error(err))
-			wr.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		log.Info("Cache miss", zap.String("user", login))
-		cache.Add(string(body), login)
-		wr.WriteHeader(http.StatusOK)
-		_, _ = wr.Write([]byte(login))
-	})
-	// Start h2c (HTTP/2 over TCP) server.
+	idp := &auth.GitHubIdP{
+		HTTP:  http.DefaultClient,
+		Cache: cache,
+		Log:   log,
+	}
+	// Start HTTP server.
 	hs := &http.Server{
 		Addr:    bind,
-		Handler: handler,
+		Handler: idp,
 	}
 	log.Info("Starting server", zap.String("bind", bind))
 	if err := hs.ListenAndServe(); err != nil {
 		log.Fatal("Server failed", zap.Error(err))
 	}
-}
-
-func fetchLogin(ctx context.Context, authToken string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "token "+authToken)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("status %d", res.StatusCode)
-	}
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return "", err
-	}
-	var u user
-	if err := json.Unmarshal(body, &u); err != nil {
-		return "", err
-	}
-	return u.Login, nil
-}
-
-type user struct {
-	Login string `json:"login"`
 }

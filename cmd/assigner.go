@@ -51,6 +51,11 @@ func runAssigner(_ *cobra.Command, _ []string) {
 	}
 	// Connect to Kafka.
 	saramaClient := saramaClientFromEnv()
+	defer func() {
+		if err := saramaClient.Close(); err != nil {
+			log.Error("Failed to close sarama client", zap.Error(err))
+		}
+	}()
 	log.Info("Creating Kafka consumer")
 	consumer, err := sarama.NewConsumerFromClient(saramaClient)
 	if err != nil {
@@ -75,7 +80,9 @@ func runAssigner(_ *cobra.Command, _ []string) {
 	if err != nil {
 		log.Fatal("Failed to start Kafka partition consumer", zap.Error(err))
 	}
-	defer func() {
+	go func() {
+		<-ctx.Done()
+		log.Info("Context done", zap.Error(ctx.Err()))
 		log.Info("Closing Kafka partition consumer")
 		if err := partitionConsumer.Close(); err != nil {
 			log.Error("Failed to close Kafka partition consumer")
@@ -84,16 +91,9 @@ func runAssigner(_ *cobra.Command, _ []string) {
 	// Spin up assigner.
 	assigner := njobs.Assigner{
 		RedisClient: &rc,
-		Options:     njobsOptionsFromEnv(),
+		Log:         log,
 	}
 	log.Info("Starting assigner")
-	go func() {
-		<-ctx.Done()
-		log.Info("Context canceled, stopping consumer")
-		if err := partitionConsumer.Close(); err != nil {
-			log.Error("Error stopping consumer", zap.Error(err))
-		}
-	}()
 	if err := assigner.Run(partitionConsumer.Messages()); err != nil {
 		log.Fatal("Assigner failed", zap.Error(err))
 	}

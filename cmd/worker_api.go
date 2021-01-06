@@ -2,21 +2,22 @@ package main
 
 import (
 	"context"
-	"database/sql"
-	"encoding/hex"
-	"net"
 	"sync"
 
+	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/appctx"
+	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/authgw"
+	"go.od2.network/hive/pkg/discovery"
 	"go.od2.network/hive/pkg/njobs"
-	"go.od2.network/hive/pkg/token"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
+
+// TODO Allow surrendering quota
 
 var workerAPICmd = cobra.Command{
 	Use:   "worker-api",
@@ -29,7 +30,7 @@ var workerAPICmd = cobra.Command{
 
 func init() {
 	flags := workerAPICmd.Flags()
-	flags.String("bind", ":8000", "Server bind")
+	flags.String("socket", "", "UNIX socket address")
 
 	rootCmd.AddCommand(&workerAPICmd)
 }
@@ -37,7 +38,7 @@ func init() {
 func runWorkerAPI(cmd *cobra.Command, _ []string) {
 	// Get flags
 	flags := cmd.Flags()
-	bind, err := flags.GetString("bind")
+	socket, err := flags.GetString("socket")
 	if err != nil {
 		panic(err)
 	}
@@ -59,7 +60,7 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 	}
 	// Connect to SQL.
 	log.Info("Connecting to MySQL")
-	db, err := sql.Open("mysql", viper.GetString(ConfMySQLDSN))
+	db, err := openDB()
 	if err != nil {
 		log.Fatal("Failed to connect to MySQL", zap.Error(err))
 	}
@@ -73,7 +74,7 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 		log.Fatal("Failed to ping DB", zap.Error(err))
 	}
 	// Build auth gateway.
-	backend := authgw.Database{DB: db}
+	backend := authgw.Database{DB: db.DB}
 	cachedBackend, err := authgw.NewCache(&backend,
 		viper.GetInt(ConfAuthgwCacheSize),
 		viper.GetDuration(ConfAuthgwCacheTTL))
@@ -98,33 +99,49 @@ func runWorkerAPI(cmd *cobra.Command, _ []string) {
 			log.Fatal("Auth cache invalidation failed", zap.Error(err))
 		}
 	}()
-	authSecret := new([32]byte)
-	authSecretStr := viper.GetString(ConfAuthgwSecret)
-	if len(authSecretStr) != 64 {
-		log.Fatal("Invalid " + ConfAuthgwSecret)
-	}
-	if _, err := hex.Decode(authSecret[:], []byte(authSecretStr)); err != nil {
-		log.Fatal("Invalid hex in " + ConfAuthgwSecret)
-	}
-	signer := token.NewSimpleSigner(authSecret)
-	interceptor := authgw.Interceptor{
+	interceptor := auth.WorkerAuthInterceptor{
 		Backend: cachedBackend,
-		Signer:  signer,
+		Signer:  getSigner(),
+		Log:     log.Named("auth"),
 	}
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(interceptor.Unary()),
 		grpc.StreamInterceptor(interceptor.Stream()),
 	)
+
+	// Connect to Kafka.
+	saramaClient := saramaClientFromEnv()
+	defer func() {
+		if err := saramaClient.Close(); err != nil {
+			log.Error("Failed to close sarama client", zap.Error(err))
+		}
+	}()
+	log.Info("Creating Kafka producer")
+	producer, err := sarama.NewSyncProducerFromClient(saramaClient)
+	if err != nil {
+		log.Fatal("Failed to build Kafka producer", zap.Error(err))
+	}
+	defer func() {
+		log.Info("Closing Kafka producer")
+		if err := producer.Close(); err != nil {
+			log.Error("Failed to close Kafka producer", zap.Error(err))
+		}
+	}()
 	streamer := njobs.Streamer{
 		RedisClient: &rc,
+		Log:         log.Named("worker"),
 	}
 	types.RegisterAssignmentsServer(server, &streamer)
+	types.RegisterDiscoveryServer(server, &discovery.Handler{
+		Producer: producer,
+		Log:      log.Named("discovery"),
+	})
 	// Start listener
-	listen, err := net.Listen("tcp", bind)
+	listen, err := listenUnix(socket)
 	if err != nil {
-		log.Fatal("Failed to listen", zap.String("bind", bind), zap.Error(err))
+		log.Fatal("Failed to listen", zap.String("socket", socket), zap.Error(err))
 	}
-	log.Info("Starting server", zap.String("bind", bind))
+	log.Info("Starting server", zap.String("socket", socket))
 	if err := server.Serve(listen); err != nil {
 		log.Fatal("Server failed", zap.Error(err))
 	}

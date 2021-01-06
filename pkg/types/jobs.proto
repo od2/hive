@@ -5,18 +5,7 @@ option go_package = "go.od2.network/hive/pkg/types";
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-
-message ItemLocator {
-  string collection = 1;
-  string id = 2;
-}
-
-message ItemPointer {
-  ItemLocator dst = 1;
-  google.protobuf.Timestamp timestamp = 2;
-  // int64 pipeline = 3;
-  // ItemLocator src = 4;
-}
+import "items.proto";
 
 enum TaskStatus {
   SUCCESS = 0;
@@ -103,12 +92,17 @@ message Assignment {
 }
 
 message ReportAssignmentsRequest {
-  repeated AssignmentResult results = 1;
+  repeated AssignmentReport reports = 1;
+}
+
+message AssignmentReport {
+  KafkaPointer kafka_pointer = 1;
+  TaskStatus status = 2;
 }
 
 message AssignmentResult {
-  KafkaPointer kafka_pointer = 1;
-  TaskStatus status = 2;
+  int64 worker_id = 1;
+  AssignmentReport report = 2;
 }
 
 message ReportAssignmentsResponse {

@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package od2_network.hive;
+option go_package = "go.od2.network/hive/pkg/types";
+
+import "google/protobuf/timestamp.proto";
+
+message ItemLocator {
+  string collection = 1;
+  string id = 2;
+}
+
+message ItemPointer {
+  ItemLocator dst = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  // int64 pipeline = 3;
+  // ItemLocator src = 4;
+}

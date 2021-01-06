@@ -5,23 +5,28 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.od2.network/hive/pkg/authgw"
+	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/redistest"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 )
 
 func TestNJobs(t *testing.T) {
+	// give any goroutines time to shut down so we don't log after the test
+	defer time.Sleep(500 * time.Millisecond)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	authCtx := &authgw.Context{WorkerID: 1}
-	ctx = authgw.WithContext(ctx, authCtx)
+	authCtx := &auth.WorkerContext{WorkerID: 1}
+	ctx = auth.WithWorkerContext(ctx, authCtx)
 	rd := redistest.NewRedis(ctx, t)
 	defer rd.Close()
 
@@ -44,6 +49,7 @@ func TestNJobs(t *testing.T) {
 	// Build task streamer server.
 	streamer := Streamer{
 		RedisClient: &rc,
+		Log:         zaptest.NewLogger(t),
 	}
 	lis := bufconn.Listen(1024 * 1024)
 	defer lis.Close()
@@ -54,7 +60,7 @@ func TestNJobs(t *testing.T) {
 			info *grpc.UnaryServerInfo,
 			handler grpc.UnaryHandler,
 		) (resp interface{}, err error) {
-			return handler(authgw.WithContext(ctx, authCtx), req)
+			return handler(auth.WithWorkerContext(ctx, authCtx), req)
 		}),
 		grpc.StreamInterceptor(func(
 			srv interface{},
@@ -64,7 +70,7 @@ func TestNJobs(t *testing.T) {
 		) error {
 			return handler(srv, &serverStream{
 				ServerStream: ss,
-				ctx:          authgw.WithContext(ctx, authCtx),
+				ctx:          auth.WithWorkerContext(ctx, authCtx),
 			})
 		}),
 	)
@@ -152,7 +158,7 @@ func TestNJobs(t *testing.T) {
 	require.NoError(t, assignStream2.CloseSend())
 
 	// Acknowledge a few messages.
-	results := make([]*types.AssignmentResult, 4)
+	reports := make([]*types.AssignmentReport, 4)
 	for i, a := range batch.Assignments[:4] {
 		var status types.TaskStatus
 		if i%2 == 0 {
@@ -160,13 +166,13 @@ func TestNJobs(t *testing.T) {
 		} else {
 			status = types.TaskStatus_CLIENT_FAILURE
 		}
-		results[i] = &types.AssignmentResult{
+		reports[i] = &types.AssignmentReport{
 			KafkaPointer: a.KafkaPointer,
 			Status:       status,
 		}
 	}
 	_, err = client.ReportAssignments(ctx, &types.ReportAssignmentsRequest{
-		Results: results,
+		Reports: reports,
 	})
 	require.NoError(t, err)
 

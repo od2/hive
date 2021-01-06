@@ -18,9 +18,11 @@ type Store struct {
 	PKType    string
 }
 
+// CreateTable creates an items table.
 func (i *Store) CreateTable(ctx context.Context) error {
+	// language=MariaDB
 	const template = `CREATE TABLE %s (
-	item_id %s PRIMARY KEY,
+	item_id %s NOT NULL PRIMARY KEY,
 	found_t DATETIME NOT NULL,
 	last_update DATETIME,
 	updates BIGINT UNSIGNED DEFAULT 0 NOT NULL
@@ -37,9 +39,9 @@ type itemStoreRow struct {
 	Updates    uint64       `db:"updates"`
 }
 
-// InsertNewlyDiscovered inserts newly found items into the items table.
+// InsertDiscovered inserts newly found items into the items table.
 // If the items already exist, nothing is done.
-func (i *Store) InsertNewlyDiscovered(ctx context.Context, pointers []*types.ItemPointer) error {
+func (i *Store) InsertDiscovered(ctx context.Context, pointers []*types.ItemPointer) error {
 	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,
 		ReadOnly:  false,
@@ -47,6 +49,8 @@ func (i *Store) InsertNewlyDiscovered(ctx context.Context, pointers []*types.Ite
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
+	// language=MariaDB
 	const stmt = `INSERT IGNORE INTO %s (item_id, found_t)
 VALUES (:item_id, :found_t);`
 	inserts := make([]itemStoreRow, len(pointers))
@@ -60,10 +64,51 @@ VALUES (:item_id, :found_t);`
 			FoundT: t,
 		}
 	}
-	if _, err = tx.NamedExecContext(ctx, fmt.Sprintf(stmt, i.TableName), inserts); err != nil {
+	if _, err = i.DB.NamedExecContext(ctx, fmt.Sprintf(stmt, i.TableName), inserts); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// FilterNewPointers filters a batch of pointers, removing items that were already seen.
+func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]string, error) {
+	itemIDMap := make(map[string]bool)
+	for _, id := range itemIDs {
+		itemIDMap[id] = true
+	}
+	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+		ReadOnly:  true,
+	})
+	defer tx.Rollback()
+	if err != nil {
+		return nil, err
+	}
+	const stmt = `SELECT item_id FROM %s WHERE item_id IN (?);`
+	query, args, err := sqlx.In(fmt.Sprintf(stmt, i.TableName), itemIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile WHERE IN query: %w", err)
+	}
+	query = tx.Rebind(query)
+	known, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	for known.Next() {
+		var itemID string
+		if err := known.Scan(&itemID); err != nil {
+			return nil, fmt.Errorf("failed to scan results: %w", err)
+		}
+		delete(itemIDMap, itemID)
+	}
+	if err := known.Err(); err != nil {
+		return nil, fmt.Errorf("failed to scan result set: %w", err)
+	}
+	deduped := make([]string, 0, len(itemIDMap))
+	for id := range itemIDMap {
+		deduped = append(deduped, id)
+	}
+	return deduped, nil
 }
 
 // PushResults updates items with task results.
@@ -75,6 +120,8 @@ func (i *Store) PushTaskResults(ctx context.Context, results []*types.TaskResult
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
+	// language=MariaDB
 	const stmt = `INSERT INTO %s (item_id, found_t, last_update, updates)
 VALUES (:item_id, :found_t, :last_update, :updates)
 ON DUPLICATE KEY UPDATE last_update = VALUES(last_update), updates = updates + 1;`

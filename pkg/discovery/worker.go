@@ -2,26 +2,30 @@
 package discovery
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
+	"go.od2.network/hive/pkg/dedup"
 	"go.od2.network/hive/pkg/items"
-	"go.od2.network/hive/pkg/redisdedup"
 	"go.od2.network/hive/pkg/types"
+	"go.uber.org/zap"
 )
 
-// Worker consumes a Kafka stream of pointers to a collection.
+// Worker consumes a stream of discovered items,
+// writing new items to the task queue.
 type Worker struct {
-	Dedup     redisdedup.Dedup
+	Dedup     dedup.Dedup
 	MaxDelay  time.Duration
 	BatchSize uint
 
 	ItemStore *items.Store
 	KafkaSink *KafkaSink
+	Log       *zap.Logger
 }
+
+// TODO Support multiple collections
 
 type KafkaSink struct {
 	Producer sarama.SyncProducer
@@ -52,17 +56,20 @@ func (w *Worker) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.
 }
 
 func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) (bool, error) {
+	ctx := session.Context()
 	timer := time.NewTimer(w.MaxDelay)
 	defer timer.Stop()
 	// Read message batch from Kafka.
 	var pointers []*types.ItemPointer
 	var offset int64
+readLoop:
 	for i := uint(0); i < w.BatchSize; i++ {
 		select {
 		case <-timer.C:
-			return true, nil
+			break readLoop
 		case msg, ok := <-claim.Messages():
 			if !ok {
+				w.Log.Info("Incoming messages channel closed")
 				return false, nil
 			}
 			offset = msg.Offset
@@ -70,18 +77,22 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 			if err := proto.Unmarshal(msg.Value, pointer); err != nil {
 				return false, fmt.Errorf("invalid Protobuf from Kafka: %w", err)
 			}
-			if !pointer.Check() {
-				return false, fmt.Errorf("pointer from Kafka did not pass validity check")
+			if err := pointer.Check(); err != nil {
+				return false, fmt.Errorf("invalid pointer: %w", err)
 			}
 			pointers = append(pointers, pointer)
 		}
 	}
+	w.Log.Debug("Read batch", zap.Int("discover_count", len(pointers)))
+	if len(pointers) <= 0 {
+		return true, nil
+	}
 	// Run batch through dedup.
-	preDedupItems := make([]redisdedup.Item, len(pointers))
+	preDedupItems := make([]dedup.Item, len(pointers))
 	for i, ptr := range pointers {
 		preDedupItems[i] = ptr
 	}
-	dedupItems, err := w.Dedup.DedupItems(context.Background(), preDedupItems)
+	dedupItems, err := w.Dedup.DedupItems(ctx, preDedupItems)
 	if err != nil {
 		return false, fmt.Errorf("failed to dedup items: %w", err)
 	}
@@ -89,25 +100,33 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 	for i, dedupItem := range dedupItems {
 		pointers[i] = dedupItem.(*types.ItemPointer)
 	}
-	// Write updates to items.
-	if err := w.ItemStore.InsertNewlyDiscovered(context.TODO(), pointers); err != nil {
-		return false, fmt.Errorf("failed to insert newly discovered items: %w", err)
-	}
-	// Produce Kafka messages
-	if w.KafkaSink != nil {
-		var messages []*sarama.ProducerMessage
-		for _, pointer := range pointers {
-			buf, err := proto.Marshal(pointer.Dst)
-			if err != nil {
-				return false, fmt.Errorf("failed to marshal protobuf: %w", err)
-			}
-			messages = append(messages, &sarama.ProducerMessage{
-				Topic: w.KafkaSink.Topic,
-				Value: sarama.ByteEncoder(buf),
-			})
+	w.Log.Debug("Deduped batch", zap.Int("dedup_count", len(pointers)))
+	if len(pointers) > 0 {
+		// Write updates to items.
+		if err := w.ItemStore.InsertDiscovered(ctx, pointers); err != nil {
+			return false, fmt.Errorf("failed to insert newly discovered items: %w", err)
 		}
-		if err := w.KafkaSink.Producer.SendMessages(messages); err != nil {
-			return false, fmt.Errorf("failed to produce Kafka messages: %w", err)
+		// Add items to dedup.
+		if err := w.Dedup.AddItems(ctx, dedupItems); err != nil {
+			return false, fmt.Errorf("failed to add items to dedup: %w", err)
+		}
+		// Produce Kafka messages
+		if w.KafkaSink != nil {
+			var messages []*sarama.ProducerMessage
+			for _, pointer := range pointers {
+				buf, err := proto.Marshal(pointer.Dst)
+				if err != nil {
+					return false, fmt.Errorf("failed to marshal protobuf: %w", err)
+				}
+				messages = append(messages, &sarama.ProducerMessage{
+					Topic: w.KafkaSink.Topic,
+					Key:   sarama.StringEncoder(pointer.Dst.Id),
+					Value: sarama.ByteEncoder(buf),
+				})
+			}
+			if err := w.KafkaSink.Producer.SendMessages(messages); err != nil {
+				return false, fmt.Errorf("failed to produce Kafka messages: %w", err)
+			}
 		}
 	}
 	// Tell Kafka about consumer progress.
@@ -115,5 +134,6 @@ func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.Con
 		session.MarkOffset(claim.Topic(), claim.Partition(), offset+1, "")
 		session.Commit()
 	}
+	w.Log.Debug("Flushed batch")
 	return true, nil
 }

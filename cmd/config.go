@@ -1,11 +1,15 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
+	"github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
 	"github.com/pelletier/go-toml"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/pkg/njobs"
@@ -32,6 +36,9 @@ const (
 	ConfNJobsTaskExpireInterval     = "njobs.task_expire_interval"
 	ConfNJobsTaskExpireBatch        = "njobs.task_expire_batch"
 	ConfNJobsDeliverBatch           = "njobs.deliver_batch"
+	ConfNJobsResultInterval         = "njobs.result_interval"
+	ConfNJobsResultBatch            = "njobs.result_batch"
+	ConfNJobsResultBackoff          = "njobs.result_backoff"
 
 	ConfSaramaAddrs      = "sarama.addrs"
 	ConfSaramaConfigFile = "sarama.config_file"
@@ -64,6 +71,9 @@ func init() {
 	viper.SetDefault(ConfNJobsTaskExpireInterval, 2*time.Second)
 	viper.SetDefault(ConfNJobsTaskExpireBatch, uint(128))
 	viper.SetDefault(ConfNJobsDeliverBatch, uint(2048))
+	viper.SetDefault(ConfNJobsResultInterval, 3*time.Second)
+	viper.SetDefault(ConfNJobsResultBatch, uint(64))
+	viper.SetDefault(ConfNJobsResultBackoff, 2*time.Second)
 
 	viper.SetDefault(ConfSaramaAddrs, []string{})
 	viper.SetDefault(ConfSaramaConfigFile, "")
@@ -115,6 +125,9 @@ func njobsOptionsFromEnv() *njobs.Options {
 		TaskExpireInterval:     viper.GetDuration(ConfNJobsTaskExpireInterval),
 		TaskExpireBatch:        viper.GetUint(ConfNJobsTaskExpireBatch),
 		DeliverBatch:           viper.GetUint(ConfNJobsDeliverBatch),
+		ResultInterval:         viper.GetDuration(ConfNJobsResultInterval),
+		ResultBatch:            viper.GetUint(ConfNJobsResultBatch),
+		ResultBackoff:          viper.GetDuration(ConfNJobsResultBackoff),
 	}
 }
 
@@ -145,4 +158,38 @@ func saramaClientFromEnv() sarama.Client {
 		log.Fatal("Failed to build Kafka (sarama) client", zap.Error(err))
 	}
 	return client
+}
+
+func listenUnix(path string) (net.Listener, error) {
+	stat, statErr := os.Stat(path)
+	if os.IsNotExist(statErr) {
+		return net.Listen("unix", path)
+	} else if statErr != nil {
+		return nil, statErr
+	}
+	// Socket still exists, clean up.
+	if stat.Mode()|os.ModeSocket == 0 {
+		return nil, fmt.Errorf("existing file is not a socket: %s", path)
+	}
+	if err := os.Remove(path); err != nil {
+		return nil, fmt.Errorf("failed to remove socket: %w", err)
+	}
+	return net.Listen("unix", path)
+}
+
+func openDB() (*sqlx.DB, error) {
+	// Force Go-compatible time handling.
+	cfg, err := mysql.ParseDSN(viper.GetString(ConfMySQLDSN))
+	if err != nil {
+		return nil, err
+	}
+	cfg.ParseTime = true
+	cfg.Loc = time.Local
+	log.Info("Connecting to MySQL DB",
+		zap.String("mysql.net", cfg.Net),
+		zap.String("mysql.addr", cfg.Addr),
+		zap.String("mysql.db_name", cfg.DBName),
+		zap.String("mysql.user", cfg.User))
+	// Connect
+	return sqlx.Open("mysql", cfg.FormatDSN())
 }

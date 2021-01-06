@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Shopify/sarama"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var rootCmd = cobra.Command{
@@ -32,10 +34,15 @@ var rootCmd = cobra.Command{
 		}
 		logConfig.DisableCaller = true
 		logConfig.DisableStacktrace = true
+		logConfig.Level.SetLevel(zapcore.DebugLevel) // TODO Configurable log level
 		var err error
 		log, err = logConfig.Build()
 		if err != nil {
 			panic("failed to build logger: " + err.Error())
+		}
+		sarama.Logger, err = zap.NewStdLogAt(log.Named("sarama"), zap.InfoLevel)
+		if err != nil {
+			log.Fatal("Failed to build sarama logger", zap.Error(err))
 		}
 	},
 }

@@ -1,17 +1,22 @@
 // Package types defines Protobuf types and gRPC interfaces.
 package types
 
-//go:generate protoc -I=. --go_out=plugins:. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative models.proto
+import "fmt"
+
+//go:generate ./generate.sh
 
 // Check verifies all required fields are set.
-func (m *ItemPointer) Check() bool {
+func (m *ItemPointer) Check() error {
+	if m == nil {
+		return fmt.Errorf("empty pointer")
+	}
 	if m.Dst == nil {
-		return false
+		return fmt.Errorf("empty dst")
 	}
 	if m.Timestamp == nil {
-		return false
+		return fmt.Errorf("empty timestamp")
 	}
-	return true
+	return nil
 }
 
 // DedupKey returns the ID of the item the pointer is pointing to.
