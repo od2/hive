@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
@@ -19,6 +20,9 @@ import (
 )
 
 func TestNJobs(t *testing.T) {
+	// give any goroutines time to shut down so we don't log after the test
+	defer time.Sleep(500 * time.Millisecond)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	authCtx := &auth.WorkerContext{WorkerID: 1}
