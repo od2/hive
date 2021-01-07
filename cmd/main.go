@@ -2,12 +2,16 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/pprof"
 	"os"
+	"strings"
 
 	"github.com/Shopify/sarama"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel/exporters/metric/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -26,6 +30,10 @@ var rootCmd = cobra.Command{
 		if err := viper.ReadInConfig(); err != nil {
 			panic("Failed to read config: " + err.Error())
 		}
+		viper.SetEnvPrefix("od2")
+		viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+		viper.AutomaticEnv()
+
 		var logConfig zap.Config
 		if devMode {
 			logConfig = zap.NewDevelopmentConfig()
@@ -43,6 +51,22 @@ var rootCmd = cobra.Command{
 		sarama.Logger, err = zap.NewStdLogAt(log.Named("sarama"), zap.InfoLevel)
 		if err != nil {
 			log.Fatal("Failed to build sarama logger", zap.Error(err))
+		}
+
+		internalListen := viper.GetString(ConfInternalListen)
+		if internalListen != "" {
+			exporter, err := prometheus.NewExportPipeline(prometheus.Config{})
+			if err != nil {
+				log.Fatal("Failed to build Prometheus exporter")
+			}
+			serveMux := http.NewServeMux()
+			serveMux.Handle("/metrics", exporter)
+			serveMux.HandleFunc("/debug/pprof/", pprof.Index)
+			serveMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+			serveMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+			serveMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+			serveMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+			go http.ListenAndServe(internalListen, serveMux)
 		}
 	},
 }

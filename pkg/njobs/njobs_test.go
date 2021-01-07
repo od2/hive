@@ -140,8 +140,9 @@ func TestNJobs(t *testing.T) {
 			Offset:    128 + int64(i),
 		}
 	}
-	offset, err := streamer.evalAssignTasks(ctx, msgBatch)
+	offset, count, err := streamer.evalAssignTasks(ctx, msgBatch)
 	assert.EqualError(t, err, "no workers available")
+	assert.Equal(t, int64(5), count)
 	require.Equal(t, int64(132), offset, "wrong tasks assigned")
 
 	// Try consuming messages on an existing session.

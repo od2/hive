@@ -53,6 +53,8 @@ const (
 	ConfAuthgwCacheTTL       = "authgw.cache.ttl"
 	ConfAuthgwCacheStreamKey = "authgw.cache.stream_key"
 	ConfAuthgwCacheBacklog   = "authgw.cache.backlog"
+
+	ConfInternalListen = "internal.listen"
 )
 
 func init() {
@@ -91,6 +93,8 @@ func init() {
 	viper.SetDefault(ConfAuthgwCacheTTL, time.Hour)
 	viper.SetDefault(ConfAuthgwCacheStreamKey, "token-invalidations")
 	viper.SetDefault(ConfAuthgwCacheBacklog, 64)
+
+	viper.SetDefault(ConfInternalListen, "")
 }
 
 func redisClientFromEnv() *redis.Client {

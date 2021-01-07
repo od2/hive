@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Shopify/sarama"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +25,8 @@ import (
 type Assigner struct {
 	RedisClient *RedisClient
 	Log         *zap.Logger
+
+	Metrics *AssignerMetrics
 }
 
 // ConsumeClaim starts streaming messages from Kafka in batches.
@@ -123,7 +127,7 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 		s.Log.Debug("Empty batch")
 		return true, nil
 	}
-	lastOffset, assignErr := s.r.evalAssignTasks(ctx, s.window)
+	lastOffset, count, assignErr := s.r.evalAssignTasks(ctx, s.window)
 	if assignErr == ErrSeek {
 		// Redis is ahead of Kafka.
 		// This is weird, since we would expect Kafka to be more durable than Redis.
@@ -142,12 +146,40 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 		// Batch has been processed completely
 		ok = true
 	}
+	atomic.StoreInt64(&s.Metrics.offset, lastOffset)
+	s.Metrics.assigns.Add(ctx, count)
 	s.Log.Debug("Assigning tasks",
 		zap.Int64("assigner.offset", lastOffset),
+		zap.Int64("assigner.count", count),
 		zap.Bool("assigner.ok", ok))
 	// Move messages from window to channel.
 	for len(s.window) > 0 && s.window[0].Offset <= lastOffset {
 		s.window = s.window[1:]
 	}
 	return
+}
+
+type AssignerMetrics struct {
+	batches metric.Int64Counter
+	offset  int64
+	assigns metric.Int64Counter
+}
+
+func NewAssignerMetrics(m metric.Meter) (*AssignerMetrics, error) {
+	metrics := new(AssignerMetrics)
+	var err error
+	metrics.batches, err = m.NewInt64Counter("assigner_batches")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := m.NewInt64UpDownSumObserver("assigner_offset", func(_ context.Context, res metric.Int64ObserverResult) {
+		res.Observe(atomic.LoadInt64(&metrics.offset))
+	}); err != nil {
+		return nil, err
+	}
+	metrics.assigns, err = m.NewInt64Counter("assigner_assigns_count")
+	if err != nil {
+		return nil, err
+	}
+	return metrics, nil
 }

@@ -21,6 +21,7 @@ import (
 	"go.od2.network/hive/pkg/token"
 	"go.od2.network/hive/pkg/types"
 	"go.od2.network/hive/pkg/worker"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
@@ -207,9 +208,12 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 		Scripts:       scripts,
 	}
 	// Build assigner.
+	metrics, err := NewAssignerMetrics(metric.NoopMeterProvider{}.Meter(""))
+	require.NoError(t, err)
 	assigner := &Assigner{
 		RedisClient: rc,
 		Log:         zaptest.NewLogger(t),
+		Metrics:     metrics,
 	}
 	// Build streamer.
 	streamer := &Streamer{

@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 	"go.od2.network/hive/pkg/appctx"
 	"go.od2.network/hive/pkg/njobs"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -29,6 +31,8 @@ func init() {
 func runAssigner(_ *cobra.Command, _ []string) {
 	ctx, cancel := context.WithCancel(appctx.Context())
 	defer cancel()
+	// Create metrics.
+	meter := otel.GetMeterProvider().Meter("assigner")
 	// Connect to Redis.
 	rd := redisClientFromEnv()
 	scripts, err := njobs.LoadScripts(ctx, rd)
@@ -88,10 +92,21 @@ func runAssigner(_ *cobra.Command, _ []string) {
 			log.Error("Failed to close Kafka partition consumer")
 		}
 	}()
+	if _, err := meter.NewInt64UpDownSumObserver("assigner_high_water_mark_offset",
+		func(ctx context.Context, res metric.Int64ObserverResult) {
+			res.Observe(partitionConsumer.HighWaterMarkOffset())
+		}); err != nil {
+		log.Fatal("Failed to create metric observer", zap.Error(err))
+	}
 	// Spin up assigner.
+	metrics, err := njobs.NewAssignerMetrics(meter)
+	if err != nil {
+		log.Fatal("Failed to create metrics", zap.Error(err))
+	}
 	assigner := njobs.Assigner{
 		RedisClient: &rc,
 		Log:         log,
+		Metrics:     metrics,
 	}
 	log.Info("Starting assigner")
 	if err := assigner.Run(partitionConsumer.Messages()); err != nil {

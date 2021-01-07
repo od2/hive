@@ -508,7 +508,7 @@ var (
 
 // evalAssignTasks runs the assignTasks script.
 // It returns the offset of the last message fully consumed and a list of assignments.
-func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.ConsumerMessage) (int64, error) {
+func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.ConsumerMessage) (newOffset int64, count int64, err error) {
 	expireAt := time.Now().Add(r.TaskTimeout).Unix()
 	keys := []string{
 		r.PartitionKeys.Offset,
@@ -528,8 +528,9 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 		// Offset has to be strictly monotonically increasing!
 		// Violating this is going to stall the pipeline.
 		if lastOffset >= msg.Offset {
-			return 0, fmt.Errorf("offsets in batch at %d are not strictly monotonically increasing: "+
+			err = fmt.Errorf("offsets in batch at %d are not strictly monotonically increasing: "+
 				"got %d, previous %d", i, msg.Offset, lastOffset)
+			return
 		}
 		lastOffset = msg.Offset
 		argv[3+i*2] = msg.Offset
@@ -537,29 +538,34 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 		offsetsMap[msg.Offset] = msg
 	}
 	cmd := r.assignTasks.Run(ctx, r.Redis, keys, argv...)
-	res, err := cmd.Result()
+	err = cmd.Err()
 	if err != nil {
-		return 0, err
+		return
 	}
+	res := cmd.Val()
 	resSlice, ok := res.([]interface{})
 	if !ok {
-		return 0, fmt.Errorf("unexpected res: %#v", res)
+		err = fmt.Errorf("unexpected res: %#v", res)
+		return
 	}
 	if len(resSlice) != 3 {
-		return 0, fmt.Errorf("unexpected res len: %d", len(resSlice))
+		err = fmt.Errorf("unexpected res len: %d", len(resSlice))
+		return
 	}
-	newOffset, ok := resSlice[0].(int64)
+	newOffset, ok = resSlice[0].(int64)
 	if !ok {
-		return 0, fmt.Errorf("unexpected res[0]: %#v", resSlice[0])
+		err = fmt.Errorf("unexpected res[0]: %#v", resSlice[0])
+		return
 	}
-	count, ok := resSlice[1].(int64)
+	count, ok = resSlice[1].(int64)
 	if !ok {
-		return 0, fmt.Errorf("unexpected res[1]: %#v", resSlice[1])
+		err = fmt.Errorf("unexpected res[1]: %#v", resSlice[1])
+		return
 	}
-	_ = count // TODO export to metrics
 	retCode, ok := resSlice[2].(string)
 	if !ok {
-		return 0, fmt.Errorf("unexpected res[1]: %#v", resSlice[2])
+		err = fmt.Errorf("unexpected res[1]: %#v", resSlice[2])
+		return
 	}
 	var retErr error
 	switch retCode {
@@ -572,7 +578,7 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 	default:
 		retErr = fmt.Errorf("unknown error code: %s", retCode)
 	}
-	return newOffset, retErr
+	return newOffset, count, retErr
 }
 
 // expireTasksScript removes expired in-flight assignments for a worker stream.
