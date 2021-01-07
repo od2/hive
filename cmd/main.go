@@ -11,6 +11,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/metric/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -59,6 +60,7 @@ var rootCmd = cobra.Command{
 			if err != nil {
 				log.Fatal("Failed to build Prometheus exporter")
 			}
+			otel.SetMeterProvider(exporter.MeterProvider())
 			serveMux := http.NewServeMux()
 			serveMux.Handle("/metrics", exporter)
 			serveMux.HandleFunc("/debug/pprof/", pprof.Index)
