@@ -347,6 +347,8 @@ func (stack *benchStack) runClient(ctx context.Context, workerID int64) {
 		FillRate:      1, // fill as fast as possible
 		StreamBackoff: new(backoff.StopBackOff),
 		APIBackoff:    new(backoff.StopBackOff),
+		ReportRate:    1 * time.Second,
+		ReportBatch:   128,
 	}
 	assert.NoError(stack.T, simpleWorker.Run(ctx))
 }

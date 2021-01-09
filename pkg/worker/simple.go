@@ -33,6 +33,8 @@ type Simple struct {
 	FillRate      time.Duration   // Max rate to fill assignments
 	StreamBackoff backoff.BackOff // Stream connection error backoff
 	APIBackoff    backoff.BackOff // API call backoff
+	ReportRate    time.Duration   // Rate at which to report results
+	ReportBatch   uint            // Max batch size for a report
 }
 
 // SimpleHandler works off individual tasks, returning task statuses for each.
@@ -85,7 +87,8 @@ func (w *Simple) Run(outerCtx context.Context) error {
 		w.Log.Info("Closed stream")
 	}()
 	// Set up concurrent system.
-	assigns := make(chan *types.Assignment) // Incoming assignments
+	assigns := make(chan *types.Assignment)                      // Incoming assignments
+	reports := make(chan *types.AssignmentReport, w.ReportBatch) // Outgoing result reports
 	sess := &session{
 		Simple:     w,
 		streamID:   openStream.StreamId,
@@ -96,6 +99,16 @@ func (w *Simple) Run(outerCtx context.Context) error {
 	}
 	var wg sync.WaitGroup
 	defer wg.Wait()
+	// Start reporting assignments.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer softCancel()
+		r := reporter{
+			session: sess,
+		}
+		r.run(reports)
+	}()
 	// Start reading items from stream.
 	wg.Add(1)
 	go func() {
@@ -107,11 +120,18 @@ func (w *Simple) Run(outerCtx context.Context) error {
 	}()
 	// Allocate routines.
 	wg.Add(int(w.Routines))
+	workerRoutines := int32(w.Routines)
 	for i := uint(0); i < w.Routines; i++ {
 		go func(i uint) {
 			defer wg.Done()
 			defer softCancel()
-			if err := sess.worker(assigns); err != nil {
+			defer func() {
+				// Close the results channel when all writer routines exited.
+				if atomic.AddInt32(&workerRoutines, -1) <= 0 {
+					close(reports)
+				}
+			}()
+			if err := sess.worker(reports, assigns); err != nil {
 				w.Log.Error("Too many worker errors, shutting down", zap.Uint("worker_serial", i))
 			}
 		}(i)
@@ -177,6 +197,55 @@ func (s *session) fill() error {
 	}
 }
 
+type reporter struct {
+	*session
+	batch []*types.AssignmentReport
+}
+
+// run continually reports task assignment results.
+func (r *reporter) run(reports <-chan *types.AssignmentReport) {
+	ticker := time.NewTicker(r.ReportRate)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.hardCtx.Done():
+			return
+		case <-ticker.C:
+			r.flush()
+		case report, ok := <-reports:
+			if !ok {
+				r.flush()
+				return
+			}
+			r.batch = append(r.batch, report)
+			if uint(len(r.batch)) >= r.ReportBatch {
+				r.flush()
+			}
+		}
+	}
+}
+
+func (r *reporter) flush() {
+	if len(r.batch) <= 0 {
+		return
+	}
+	if err := backoff.RetryNotify(func() error {
+		_, err := r.Assignments.ReportAssignments(r.hardCtx, &types.ReportAssignmentsRequest{
+			Reports: r.batch,
+		})
+		return err
+	}, r.APIBackoff, func(err error, dur time.Duration) {
+		r.Log.Warn("Error reporting results, retrying", zap.Error(err), zap.Duration("backoff", dur))
+	}); err != nil {
+		r.Log.Error("Failed to request more assignments", zap.Error(err))
+		r.softCancel()
+		return
+	}
+	r.Log.Debug("Flushed results", zap.Int("result_count", len(r.batch)))
+	r.batch = nil
+	return
+}
+
 // fillOnce requests the server to push more assignments with a single gRPC call.
 func (s *session) fillOnce(delta int32) (err error) {
 	_, err = s.Assignments.WantAssignments(s.softCtx, &types.WantAssignmentsRequest{
@@ -187,7 +256,7 @@ func (s *session) fillOnce(delta int32) (err error) {
 }
 
 // worker runs a single worker loop routine.
-func (s *session) worker(assigns <-chan *types.Assignment) error {
+func (s *session) worker(reports chan<- *types.AssignmentReport, assigns <-chan *types.Assignment) error {
 	for {
 		select {
 		case <-s.hardCtx.Done():
@@ -201,30 +270,12 @@ func (s *session) worker(assigns <-chan *types.Assignment) error {
 			// Update pipeline state.
 			atomic.StoreInt32(&s.needsFill, 1)
 			atomic.AddInt32(&s.inflight, -1)
-			// Notify server with result.
-			if err := backoff.RetryNotify(func() error {
-				return s.reportAssignment(assign, status)
-			}, s.APIBackoff, func(err error, dur time.Duration) {
-				s.Log.Warn("Error reporting assignment result", zap.Error(err), zap.Duration("backoff", dur))
-			}); err != nil {
-				s.Log.Error("Failed to report assignment result", zap.Error(err))
+			reports <- &types.AssignmentReport{
+				KafkaPointer: assign.GetKafkaPointer(),
+				Status:       status,
 			}
 		}
 	}
-}
-
-// reportAssignment reports the status of a single assignment.
-// TODO If this becomes a bottleneck, batch together assignment reports.
-func (s *session) reportAssignment(assign *types.Assignment, status types.TaskStatus) error {
-	_, err := s.Assignments.ReportAssignments(s.hardCtx, &types.ReportAssignmentsRequest{
-		Reports: []*types.AssignmentReport{
-			{
-				KafkaPointer: assign.GetKafkaPointer(),
-				Status:       status,
-			},
-		},
-	})
-	return err
 }
 
 // addInflight increases the number of tasks in-flight.
