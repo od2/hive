@@ -170,7 +170,7 @@ type reporterIn struct {
 	Producer    sarama.SyncProducer `name:"reporter_producer"`
 }
 
-func runReporter(log *zap.Logger, inputs reporterIn) {
+func runReporter(ctx context.Context, log *zap.Logger, inputs reporterIn) {
 	// Spin up reporter.
 	reporter := njobs.Reporter{
 		RedisClient: inputs.RedisClient,
@@ -179,7 +179,7 @@ func runReporter(log *zap.Logger, inputs reporterIn) {
 		Log:         log,
 	}
 	inputs.Lifecycle.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
+		OnStart: func(_ context.Context) error {
 			go func() {
 				log.Info("Starting reporter")
 				if err := reporter.Run(ctx); err != nil {
