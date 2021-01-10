@@ -37,14 +37,12 @@ var rootCmd = cobra.Command{
 	Short: "od2/hive server",
 
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		if configPath == "" {
-			_, _ = fmt.Fprintln(os.Stderr, "No config path given")
-			os.Exit(1)
-		}
-		viper.SetConfigFile(configPath)
-		viper.SetConfigType("toml")
-		if err := viper.ReadInConfig(); err != nil {
-			panic("Failed to read config: " + err.Error())
+		if configPath != "" {
+			viper.SetConfigFile(configPath)
+			viper.SetConfigType("toml")
+			if err := viper.ReadInConfig(); err != nil {
+				panic("Failed to read config: " + err.Error())
+			}
 		}
 		viper.SetEnvPrefix("od2")
 		viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
