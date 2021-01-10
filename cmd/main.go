@@ -11,6 +11,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.od2.network/hive/cmd/admin_tool"
 	"go.od2.network/hive/cmd/assigner"
 	"go.od2.network/hive/cmd/discovery"
 	"go.od2.network/hive/cmd/github_auth"
@@ -95,6 +96,7 @@ func init() {
 	persistentFlags.StringVarP(&configPath, "config", "c", "", "Config file")
 
 	rootCmd.AddCommand(
+		&admin_tool.Cmd,
 		&assigner.Cmd,
 		&discovery.Cmd,
 		&github_auth.Cmd,
