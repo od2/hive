@@ -35,11 +35,11 @@ var Cmd = cobra.Command{
 					Target: newAssignerPartitionConsumer,
 				},
 				fx.Annotated{
-					Name:   "reporter_producer",
-					Target: newReporterProducer,
+					Name:   "forwarder_producer",
+					Target: newForwarderProducer,
 				},
 			),
-			fx.Invoke(runAssigner, runReporter),
+			fx.Invoke(runAssigner, runForwarder),
 		)
 		app.Run()
 	},
@@ -105,7 +105,7 @@ func newAssignerPartitionConsumer(log *zap.Logger, inputs assignerConsumerIn) (s
 	return partitionConsumer, nil
 }
 
-func newReporterProducer(
+func newForwarderProducer(
 	log *zap.Logger,
 	saramaClient sarama.Client,
 	lc fx.Lifecycle,
@@ -160,19 +160,19 @@ func runAssigner(log *zap.Logger, inputs assignerIn) {
 	})
 }
 
-type reporterIn struct {
+type forwarderIn struct {
 	fx.In
 
 	Lifecycle   fx.Lifecycle
 	Shutdown    fx.Shutdowner
 	Partition   *providers.NJobsPartition
 	RedisClient *njobs.RedisClient
-	Producer    sarama.SyncProducer `name:"reporter_producer"`
+	Producer    sarama.SyncProducer `name:"forwarder_producer"`
 }
 
-func runReporter(ctx context.Context, log *zap.Logger, inputs reporterIn) {
-	// Spin up reporter.
-	reporter := njobs.Reporter{
+func runForwarder(ctx context.Context, log *zap.Logger, inputs forwarderIn) {
+	// Spin up forwarder.
+	forwarder := njobs.ResultForwarder{
 		RedisClient: inputs.RedisClient,
 		Producer:    inputs.Producer,
 		Topic:       inputs.Partition.Topic + ".results",
@@ -181,9 +181,9 @@ func runReporter(ctx context.Context, log *zap.Logger, inputs reporterIn) {
 	inputs.Lifecycle.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			go func() {
-				log.Info("Starting reporter")
-				if err := reporter.Run(ctx); err != nil {
-					log.Error("Reporter failed", zap.Error(err))
+				log.Info("Starting forwarder")
+				if err := forwarder.Run(ctx); err != nil {
+					log.Error("ResultForwarder failed", zap.Error(err))
 				}
 				if err := inputs.Shutdown.Shutdown(); err != nil {
 					log.Fatal("Failed to shut down", zap.Error(err))
