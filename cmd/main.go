@@ -15,6 +15,7 @@ import (
 	"go.od2.network/hive/cmd/discovery"
 	"go.od2.network/hive/cmd/github_auth"
 	"go.od2.network/hive/cmd/management_api"
+	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/cmd/worker_api"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/metric/prometheus"
@@ -62,6 +63,7 @@ var rootCmd = cobra.Command{
 		if err != nil {
 			panic("failed to build logger: " + err.Error())
 		}
+		providers.Log = log
 		sarama.Logger, err = zap.NewStdLogAt(log.Named("sarama"), zap.InfoLevel)
 		if err != nil {
 			log.Fatal("Failed to build sarama logger", zap.Error(err))
