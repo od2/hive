@@ -194,15 +194,13 @@ func runDiscovery(
 	inputs.Lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			go func() {
+				defer inputs.Shutdown.Shutdown()
 				if err := inputs.DiscoveredConsumer.Consume(
 					innerCtx,
 					[]string{discoveryTopic},
 					worker,
 				); err != nil {
 					log.Error("Consumer group exited", zap.Error(err))
-					if err := inputs.Shutdown.Shutdown(); err != nil {
-						log.Fatal("Failed to shut down", zap.Error(err))
-					}
 				}
 			}()
 			return nil

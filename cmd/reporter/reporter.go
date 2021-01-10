@@ -152,15 +152,13 @@ func runReporter(
 	inputs.Lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			go func() {
+				defer inputs.Shutdown.Shutdown()
 				if err := inputs.ReporterConsumer.Consume(
 					innerCtx,
 					[]string{inputs.Flags.collection + ".results"},
 					worker,
 				); err != nil {
 					log.Error("Consumer group exited", zap.Error(err))
-					if err := inputs.Shutdown.Shutdown(); err != nil {
-						log.Fatal("Failed to shut down", zap.Error(err))
-					}
 				}
 			}()
 			return nil
