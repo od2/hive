@@ -9,6 +9,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 )
@@ -74,23 +75,20 @@ func (r *ResultForwarder) step(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("invalid status: %s", statusEnumStr)
 		}
-		offsetStr, ok := msg.Values["offset"].(string)
+		item, ok := msg.Values["item"].(string)
 		if !ok {
-			return fmt.Errorf("missing offset in result")
-		}
-		offset, err := strconv.ParseInt(offsetStr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("invalid offset: %s", offsetStr)
+			return fmt.Errorf("empty item ID: %s", msg.ID)
 		}
 		result := types.AssignmentResult{
 			Report: &types.AssignmentReport{
-				KafkaPointer: &types.KafkaPointer{
-					Partition: 0, // TODO
-					Offset:    offset,
-				},
 				Status: types.TaskStatus(statusEnum),
 			},
-			WorkerId: workerID,
+			WorkerId:   workerID,
+			FinishTime: ptypes.TimestampNow(),
+			Locator: &types.ItemLocator{
+				Collection: "", // TODO
+				Id:         item,
+			},
 		}
 		value, err := proto.Marshal(&result)
 		if err != nil {

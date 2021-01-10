@@ -111,8 +111,8 @@ func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]stri
 	return deduped, nil
 }
 
-// PushTaskResults updates items with task results.
-func (i *Store) PushTaskResults(ctx context.Context, results []*types.TaskResult) error {
+// PushAssignmentResults updates items with task results.
+func (i *Store) PushAssignmentResults(ctx context.Context, results []*types.AssignmentResult) error {
 	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,
 		ReadOnly:  false,
@@ -132,7 +132,7 @@ ON DUPLICATE KEY UPDATE last_update = VALUES(last_update), updates = updates + 1
 			return fmt.Errorf("invalid finish_time: %w", err)
 		}
 		inserts[i] = itemStoreRow{
-			ItemID:     result.Item.Id,
+			ItemID:     result.Locator.Id,
 			FoundT:     finishTime,
 			LastUpdate: sql.NullTime{Valid: true, Time: finishTime},
 			Updates:    1, // the initial value, otherwise it's added in the update
