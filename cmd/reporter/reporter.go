@@ -153,12 +153,15 @@ func runReporter(
 		OnStart: func(ctx context.Context) error {
 			go func() {
 				defer inputs.Shutdown.Shutdown()
-				if err := inputs.ReporterConsumer.Consume(
-					innerCtx,
-					[]string{inputs.Flags.collection + ".results"},
-					worker,
-				); err != nil {
-					log.Error("Consumer group exited", zap.Error(err))
+				for {
+					if err := inputs.ReporterConsumer.Consume(
+						innerCtx,
+						[]string{inputs.Flags.collection + ".results"},
+						worker,
+					); err != nil {
+						log.Error("Consumer group exited", zap.Error(err))
+						return
+					}
 				}
 			}()
 			return nil
