@@ -54,7 +54,17 @@ func NewCmd(invoke interface{}) func(cmd *cobra.Command, args []string) {
 			fx.Supply(args),
 			fx.Supply(Log),
 			fx.Logger(zap.NewStdLog(Log)),
+			// Run the actual command in the injection phase.
 			fx.Invoke(invoke),
+			// When the injection phase finishes and the app "starts",
+			// we are done and we can exit.
+			fx.Invoke(func(lc fx.Lifecycle, shutdown fx.Shutdowner) {
+				lc.Append(fx.Hook{
+					OnStart: func(ctx context.Context) error {
+						return shutdown.Shutdown()
+					},
+				})
+			}),
 		)
 		app.Run()
 	}
