@@ -11,11 +11,25 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.od2.network/hive/cmd/assigner"
+	"go.od2.network/hive/cmd/discovery"
+	"go.od2.network/hive/cmd/github_auth"
+	"go.od2.network/hive/cmd/management_api"
+	"go.od2.network/hive/cmd/worker_api"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/metric/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
+
+// Config keys.
+const (
+	ConfInternalListen = "internal.listen"
+)
+
+func init() {
+	viper.SetDefault(ConfInternalListen, "")
+}
 
 var rootCmd = cobra.Command{
 	Use:   "hive",
@@ -44,8 +58,7 @@ var rootCmd = cobra.Command{
 		logConfig.DisableCaller = true
 		logConfig.DisableStacktrace = true
 		logConfig.Level.SetLevel(zapcore.DebugLevel) // TODO Configurable log level
-		var err error
-		log, err = logConfig.Build()
+		log, err := logConfig.Build()
 		if err != nil {
 			panic("failed to build logger: " + err.Error())
 		}
@@ -74,13 +87,20 @@ var rootCmd = cobra.Command{
 }
 
 var devMode bool
-var log *zap.Logger
 var configPath string
 
 func init() {
 	persistentFlags := rootCmd.PersistentFlags()
 	persistentFlags.BoolVar(&devMode, "dev", false, "Dev mode")
 	persistentFlags.StringVarP(&configPath, "config", "c", "", "Config file")
+
+	rootCmd.AddCommand(
+		&assigner.Cmd,
+		&discovery.Cmd,
+		&github_auth.Cmd,
+		&management_api.Cmd,
+		&worker_api.Cmd,
+	)
 }
 
 func main() {

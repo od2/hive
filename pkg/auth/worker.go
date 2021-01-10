@@ -122,7 +122,7 @@ type WorkerContext struct {
 
 type workerContextKey struct{}
 
-// WithContext returns a Go context with added auth context.
+// WithWorkerContext returns a Go context with added auth context.
 func WithWorkerContext(ctx context.Context, authCtx *WorkerContext) context.Context {
 	return context.WithValue(ctx, workerContextKey{}, authCtx)
 }

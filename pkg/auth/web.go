@@ -72,7 +72,7 @@ func (w *WebIdentityInterceptor) Stream() grpc.StreamServerInterceptor {
 	}
 }
 
-// WorkerContext describes the auth context of a request.
+// WebContext describes the auth context of a request.
 type WebContext struct {
 	WorkerID int64
 }

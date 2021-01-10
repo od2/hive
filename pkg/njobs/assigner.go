@@ -29,7 +29,7 @@ type Assigner struct {
 	Metrics *AssignerMetrics
 }
 
-// ConsumeClaim starts streaming messages from Kafka in batches.
+// Run starts streaming messages from Kafka in batches.
 // The algorithm throttles Kafka consumption to match the speed at which nqueue workers consume.
 func (a *Assigner) Run(msgs <-chan *sarama.ConsumerMessage) error {
 	ctx, cancel := context.WithCancel(context.Background())

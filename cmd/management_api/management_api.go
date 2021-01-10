@@ -1,10 +1,11 @@
-package main
+package management_api
 
 import (
 	"context"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/cobra"
+	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/management"
 	"go.od2.network/hive/pkg/token"
@@ -14,32 +15,29 @@ import (
 	"google.golang.org/grpc"
 )
 
-var managementAPICmd = cobra.Command{
+var Cmd = cobra.Command{
 	Use:   "management-api",
 	Short: "Run management API server",
 	Long: "Runs the gRPC server for the management API.\n" +
 		"It is safe to load-balance multiple management-api servers.",
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
-		app := fx.New(
-			fx.Provide(providers),
-			fx.Supply(cmd),
+		app := providers.NewApp(
+			cmd,
 			fx.Invoke(newManagementAPI),
-			fx.Logger(zap.NewStdLog(log)),
 		)
 		app.Run()
 	},
 }
 
 func init() {
-	flags := managementAPICmd.Flags()
+	flags := Cmd.Flags()
 	flags.String("socket", "", "UNIX socket address")
-
-	rootCmd.AddCommand(&managementAPICmd)
 }
 
 func newManagementAPI(
 	lc fx.Lifecycle,
+	log *zap.Logger,
 	cmd *cobra.Command,
 	db *sqlx.DB,
 	signer token.Signer,
@@ -62,7 +60,7 @@ func newManagementAPI(
 		Signer: signer,
 	})
 	// Start listener
-	listen, err := listenUnix(socket)
+	listen, err := providers.ListenUnix(socket)
 	if err != nil {
 		log.Fatal("Failed to listen", zap.String("socket", socket), zap.Error(err))
 	}
