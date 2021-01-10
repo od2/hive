@@ -306,7 +306,11 @@ func (s *session) numPending(ctx context.Context) (int32, error) {
 	}); err != nil {
 		s.Log.Error("Failed to get pending assignments", zap.Error(err))
 	}
-	return watermark + atomic.LoadInt32(&s.inflight), nil
+	inflight := atomic.LoadInt32(&s.inflight)
+	s.Log.Debug("Pending count",
+		zap.Int32("pending", watermark),
+		zap.Int32("inflight", inflight))
+	return watermark + inflight, nil
 }
 
 // pull consumes assignments from a session across multiple streams.
