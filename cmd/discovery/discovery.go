@@ -151,21 +151,20 @@ func newDiscoveredProducer(
 type discoveryIn struct {
 	fx.In
 
-	Cmd                *cobra.Command
+	Lifecycle          fx.Lifecycle
+	Shutdown           fx.Shutdowner
+	Flags              *discoveryFlags
 	Items              *items.Store
 	TasksProducer      sarama.SyncProducer  `name:"tasks_producer"`
 	DiscoveredConsumer sarama.ConsumerGroup `name:"discovered_consumer"`
 }
 
 func runDiscovery(
-	lc fx.Lifecycle,
-	shutdown fx.Shutdowner,
 	log *zap.Logger,
-	flags *discoveryFlags,
-	inputs *discoveryIn,
+	inputs discoveryIn,
 ) {
-	tasksTopic := flags.collection
-	discoveryTopic := flags.collection + ".discovered"
+	tasksTopic := inputs.Flags.collection
+	discoveryTopic := inputs.Flags.collection + ".discovered"
 
 	// Connect to dedup.
 	// TODO Support bitmap dedup.
@@ -189,7 +188,7 @@ func runDiscovery(
 	log.Info("Consuming discovered items",
 		zap.String("kafka.discovered", discoveryTopic))
 	innerCtx, cancel := context.WithCancel(context.Background())
-	lc.Append(fx.Hook{
+	inputs.Lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			go func() {
 				if err := inputs.DiscoveredConsumer.Consume(
@@ -198,7 +197,7 @@ func runDiscovery(
 					worker,
 				); err != nil {
 					log.Error("Consumer group exited", zap.Error(err))
-					if err := shutdown.Shutdown(); err != nil {
+					if err := inputs.Shutdown.Shutdown(); err != nil {
 						log.Fatal("Failed to shut down", zap.Error(err))
 					}
 				}

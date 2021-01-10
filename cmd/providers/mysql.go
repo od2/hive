@@ -39,7 +39,7 @@ func NewMySQL(ctx context.Context, log *zap.Logger, lc fx.Lifecycle) (*sqlx.DB, 
 		return nil, err
 	}
 	if err := db.PingContext(ctx); err != nil {
-		log.Fatal("Failed to ping DB", zap.Error(err))
+		return nil, err
 	}
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {

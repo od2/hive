@@ -39,7 +39,7 @@ var Cmd = cobra.Command{
 					Target: newReporterProducer,
 				},
 			),
-			fx.Invoke(runAssigner),
+			fx.Invoke(runAssigner, runReporter),
 		)
 		app.Run()
 	},
@@ -133,7 +133,7 @@ type assignerIn struct {
 	Meter       metric.Meter
 }
 
-func runAssigner(log *zap.Logger, inputs *assignerIn) {
+func runAssigner(log *zap.Logger, inputs assignerIn) {
 	// Spin up assigner.
 	metrics, err := njobs.NewAssignerMetrics(inputs.Meter)
 	if err != nil {
@@ -170,7 +170,7 @@ type reporterIn struct {
 	Producer    sarama.SyncProducer `name:"reporter_producer"`
 }
 
-func runReporter(log *zap.Logger, inputs *reporterIn) {
+func runReporter(log *zap.Logger, inputs reporterIn) {
 	// Spin up reporter.
 	reporter := njobs.Reporter{
 		RedisClient: inputs.RedisClient,

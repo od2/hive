@@ -87,7 +87,7 @@ type discoveryServerIn struct {
 	Producer sarama.SyncProducer `name:"worker_api_producer"`
 }
 
-func newDiscoveryServer(log *zap.Logger, inputs *discoveryServerIn) {
+func newDiscoveryServer(log *zap.Logger, inputs discoveryServerIn) {
 	types.RegisterDiscoveryServer(inputs.Server, &discovery.Handler{
 		Producer: inputs.Producer,
 		Log:      log.Named("discovery"),

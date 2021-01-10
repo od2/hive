@@ -1,6 +1,8 @@
 package providers
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/fx"
@@ -15,6 +17,7 @@ var Providers = []interface{}{
 	// authgw.go
 	NewAuthgwBackend,
 	NewAuthgwSigner,
+	NewAuthgwCache,
 	NewWorkerAuthInterceptor,
 	// mysql.go
 	NewMySQL,
@@ -22,6 +25,10 @@ var Providers = []interface{}{
 	NewNJobsOptions,
 	NewNJobsPartition,
 	NewNJobsRedis,
+	// providers.go
+	NewContext,
+	// redis.go
+	NewRedis,
 	// sarama.go
 	NewSaramaConfig,
 	NewSaramaClient,
@@ -29,7 +36,7 @@ var Providers = []interface{}{
 
 func NewApp(cmd *cobra.Command, opts ...fx.Option) *fx.App {
 	baseOpts := []fx.Option{
-		fx.Provide(Providers),
+		fx.Provide(Providers...),
 		fx.Supply(cmd),
 		fx.Supply(Log),
 		fx.Logger(zap.NewStdLog(Log)),
@@ -51,4 +58,15 @@ func NewCmd(invoke interface{}) func(cmd *cobra.Command, args []string) {
 		)
 		app.Run()
 	}
+}
+
+func NewContext(lc fx.Lifecycle) context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStop: func(_ context.Context) error {
+			cancel()
+			return nil
+		},
+	})
+	return ctx
 }
