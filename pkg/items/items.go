@@ -111,7 +111,7 @@ func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]stri
 	return deduped, nil
 }
 
-// PushResults updates items with task results.
+// PushTaskResults updates items with task results.
 func (i *Store) PushTaskResults(ctx context.Context, results []*types.TaskResult) error {
 	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,

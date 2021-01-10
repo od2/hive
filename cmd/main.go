@@ -11,25 +11,39 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.od2.network/hive/cmd/admin_tool"
+	"go.od2.network/hive/cmd/assigner"
+	"go.od2.network/hive/cmd/discovery"
+	"go.od2.network/hive/cmd/github_auth"
+	"go.od2.network/hive/cmd/management_api"
+	"go.od2.network/hive/cmd/providers"
+	"go.od2.network/hive/cmd/worker_api"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/metric/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
+// Config keys.
+const (
+	ConfInternalListen = "internal.listen"
+)
+
+func init() {
+	viper.SetDefault(ConfInternalListen, "")
+}
+
 var rootCmd = cobra.Command{
 	Use:   "hive",
 	Short: "od2/hive server",
 
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		if configPath == "" {
-			_, _ = fmt.Fprintln(os.Stderr, "No config path given")
-			os.Exit(1)
-		}
-		viper.SetConfigFile(configPath)
-		viper.SetConfigType("toml")
-		if err := viper.ReadInConfig(); err != nil {
-			panic("Failed to read config: " + err.Error())
+		if configPath != "" {
+			viper.SetConfigFile(configPath)
+			viper.SetConfigType("toml")
+			if err := viper.ReadInConfig(); err != nil {
+				panic("Failed to read config: " + err.Error())
+			}
 		}
 		viper.SetEnvPrefix("od2")
 		viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -44,11 +58,11 @@ var rootCmd = cobra.Command{
 		logConfig.DisableCaller = true
 		logConfig.DisableStacktrace = true
 		logConfig.Level.SetLevel(zapcore.DebugLevel) // TODO Configurable log level
-		var err error
-		log, err = logConfig.Build()
+		log, err := logConfig.Build()
 		if err != nil {
 			panic("failed to build logger: " + err.Error())
 		}
+		providers.Log = log
 		sarama.Logger, err = zap.NewStdLogAt(log.Named("sarama"), zap.InfoLevel)
 		if err != nil {
 			log.Fatal("Failed to build sarama logger", zap.Error(err))
@@ -74,13 +88,21 @@ var rootCmd = cobra.Command{
 }
 
 var devMode bool
-var log *zap.Logger
 var configPath string
 
 func init() {
 	persistentFlags := rootCmd.PersistentFlags()
 	persistentFlags.BoolVar(&devMode, "dev", false, "Dev mode")
 	persistentFlags.StringVarP(&configPath, "config", "c", "", "Config file")
+
+	rootCmd.AddCommand(
+		&admin_tool.Cmd,
+		&assigner.Cmd,
+		&discovery.Cmd,
+		&github_auth.Cmd,
+		&management_api.Cmd,
+		&worker_api.Cmd,
+	)
 }
 
 func main() {

@@ -83,10 +83,10 @@ readLoop:
 			pointers = append(pointers, pointer)
 		}
 	}
-	w.Log.Debug("Read batch", zap.Int("discover_count", len(pointers)))
 	if len(pointers) <= 0 {
 		return true, nil
 	}
+	w.Log.Debug("Read batch", zap.Int("discover_count", len(pointers)))
 	// Run batch through dedup.
 	preDedupItems := make([]dedup.Item, len(pointers))
 	for i, ptr := range pointers {

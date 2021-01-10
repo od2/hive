@@ -38,6 +38,9 @@ service Assignments {
   // WantAssignments tells the server to send more assignments.
   rpc WantAssignments(WantAssignmentsRequest) returns (WantAssignmentsResponse);
 
+  // SurrenderAssignments tells the server to reset all pending assignments.
+  rpc SurrenderAssignments(SurrenderAssignmentsRequest) returns (SurrenderAssignmentsResponse);
+
   // StreamAssignments connects to the server-to-client assignment stream.
   rpc StreamAssignments(StreamAssignmentsRequest) returns (stream AssignmentBatch);
 
@@ -62,6 +65,13 @@ message WantAssignmentsRequest {
 message WantAssignmentsResponse {
   int32 added_watermark = 1; // N additional tasks granted
   int32 watermark = 2; // Total number of tasks granted
+}
+
+message SurrenderAssignmentsRequest {
+  int64 stream_id = 1;
+}
+message SurrenderAssignmentsResponse {
+  int32 removed_watermark = 1;
 }
 
 message StreamAssignmentsRequest {

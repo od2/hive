@@ -27,6 +27,8 @@ type AssignmentsClient interface {
 	GetPendingAssignmentsCount(ctx context.Context, in *GetPendingAssignmentsCountRequest, opts ...grpc.CallOption) (*PendingAssignmentsCount, error)
 	// WantAssignments tells the server to send more assignments.
 	WantAssignments(ctx context.Context, in *WantAssignmentsRequest, opts ...grpc.CallOption) (*WantAssignmentsResponse, error)
+	// SurrenderAssignments tells the server to reset all pending assignments.
+	SurrenderAssignments(ctx context.Context, in *SurrenderAssignmentsRequest, opts ...grpc.CallOption) (*SurrenderAssignmentsResponse, error)
 	// StreamAssignments connects to the server-to-client assignment stream.
 	StreamAssignments(ctx context.Context, in *StreamAssignmentsRequest, opts ...grpc.CallOption) (Assignments_StreamAssignmentsClient, error)
 	// ReportAssignments reports about completed tasks.
@@ -77,8 +79,17 @@ func (c *assignmentsClient) WantAssignments(ctx context.Context, in *WantAssignm
 	return out, nil
 }
 
+func (c *assignmentsClient) SurrenderAssignments(ctx context.Context, in *SurrenderAssignmentsRequest, opts ...grpc.CallOption) (*SurrenderAssignmentsResponse, error) {
+	out := new(SurrenderAssignmentsResponse)
+	err := c.cc.Invoke(ctx, "/od2_network.hive.Assignments/SurrenderAssignments", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *assignmentsClient) StreamAssignments(ctx context.Context, in *StreamAssignmentsRequest, opts ...grpc.CallOption) (Assignments_StreamAssignmentsClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_Assignments_serviceDesc.Streams[0], "/od2_network.hive.Assignments/StreamAssignments", opts...)
+	stream, err := c.cc.NewStream(ctx, &Assignments_ServiceDesc.Streams[0], "/od2_network.hive.Assignments/StreamAssignments", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +143,8 @@ type AssignmentsServer interface {
 	GetPendingAssignmentsCount(context.Context, *GetPendingAssignmentsCountRequest) (*PendingAssignmentsCount, error)
 	// WantAssignments tells the server to send more assignments.
 	WantAssignments(context.Context, *WantAssignmentsRequest) (*WantAssignmentsResponse, error)
+	// SurrenderAssignments tells the server to reset all pending assignments.
+	SurrenderAssignments(context.Context, *SurrenderAssignmentsRequest) (*SurrenderAssignmentsResponse, error)
 	// StreamAssignments connects to the server-to-client assignment stream.
 	StreamAssignments(*StreamAssignmentsRequest, Assignments_StreamAssignmentsServer) error
 	// ReportAssignments reports about completed tasks.
@@ -155,6 +168,9 @@ func (UnimplementedAssignmentsServer) GetPendingAssignmentsCount(context.Context
 func (UnimplementedAssignmentsServer) WantAssignments(context.Context, *WantAssignmentsRequest) (*WantAssignmentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method WantAssignments not implemented")
 }
+func (UnimplementedAssignmentsServer) SurrenderAssignments(context.Context, *SurrenderAssignmentsRequest) (*SurrenderAssignmentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SurrenderAssignments not implemented")
+}
 func (UnimplementedAssignmentsServer) StreamAssignments(*StreamAssignmentsRequest, Assignments_StreamAssignmentsServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamAssignments not implemented")
 }
@@ -171,7 +187,7 @@ type UnsafeAssignmentsServer interface {
 }
 
 func RegisterAssignmentsServer(s grpc.ServiceRegistrar, srv AssignmentsServer) {
-	s.RegisterService(&_Assignments_serviceDesc, srv)
+	s.RegisterService(&Assignments_ServiceDesc, srv)
 }
 
 func _Assignments_OpenAssignmentsStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -246,6 +262,24 @@ func _Assignments_WantAssignments_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Assignments_SurrenderAssignments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SurrenderAssignmentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssignmentsServer).SurrenderAssignments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/od2_network.hive.Assignments/SurrenderAssignments",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssignmentsServer).SurrenderAssignments(ctx, req.(*SurrenderAssignmentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Assignments_StreamAssignments_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamAssignmentsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -285,7 +319,10 @@ func _Assignments_ReportAssignments_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-var _Assignments_serviceDesc = grpc.ServiceDesc{
+// Assignments_ServiceDesc is the grpc.ServiceDesc for Assignments service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var Assignments_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "od2_network.hive.Assignments",
 	HandlerType: (*AssignmentsServer)(nil),
 	Methods: []grpc.MethodDesc{
@@ -304,6 +341,10 @@ var _Assignments_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WantAssignments",
 			Handler:    _Assignments_WantAssignments_Handler,
+		},
+		{
+			MethodName: "SurrenderAssignments",
+			Handler:    _Assignments_SurrenderAssignments_Handler,
 		},
 		{
 			MethodName: "ReportAssignments",

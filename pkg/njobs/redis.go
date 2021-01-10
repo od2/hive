@@ -96,10 +96,11 @@ type Scripts struct {
 	expireTasks *redis.Script
 	ack         *redis.Script
 	// Session control
-	startSession    *redis.Script
-	stopSession     *redis.Script
-	addSessionQuota *redis.Script
-	commitRead      *redis.Script
+	startSession      *redis.Script
+	stopSession       *redis.Script
+	addSessionQuota   *redis.Script
+	resetSessionQuota *redis.Script
+	commitRead        *redis.Script
 }
 
 // LoadScripts hashes the Lua server-side scripts and pre-loads them into Redis.
@@ -129,6 +130,10 @@ func LoadScripts(ctx context.Context, r *redis.Client) (*Scripts, error) {
 	}
 	s.addSessionQuota = redis.NewScript(addSessionQuotaScript)
 	if err := s.addSessionQuota.Load(ctx, r).Err(); err != nil {
+		return nil, err
+	}
+	s.resetSessionQuota = redis.NewScript(resetSessionQuotaScript)
+	if err := s.resetSessionQuota.Load(ctx, r).Err(); err != nil {
 		return nil, err
 	}
 	s.commitRead = redis.NewScript(commitReadScript)
@@ -399,6 +404,43 @@ func (r *RedisClient) AddSessionQuota(
 		return 0, ErrSessionNotFound
 	} else if err != nil {
 		return 0, fmt.Errorf("failed to run addSessionQuota: %w", err)
+	}
+	return res, nil
+}
+
+// language=Lua
+const resetSessionQuotaScript = `
+-- Keys
+local key_worker_quota = KEYS[1]
+local key_session_quota = KEYS[2]
+-- Arguments
+local worker = ARGV[1]
+local session = ARGV[2]
+
+local worker_key = struct.pack(">l", worker)
+local session_key = struct.pack(">ll", worker, session)
+local quota_str = redis.call("HGET", key_session_quota, session_key)
+if not quota_str then
+  return nil
+end
+local quota = tonumber(quota_str)
+redis.call("HINCRBY", key_worker_quota, worker_key, -quota)
+redis.call("HSET", key_session_quota, session_key, 0)
+return quota
+`
+
+// ResetSessionQuota resets the quota of a session to zero.
+func (r *RedisClient) ResetSessionQuota(
+	ctx context.Context,
+	worker int64, session int64,
+) (removedQuota int64, err error) {
+	keys := []string{
+		r.PartitionKeys.WorkerQuota,
+		r.PartitionKeys.SessionQuota,
+	}
+	res, err := r.resetSessionQuota.Run(ctx, r.Redis, keys, worker, session).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, ErrSessionNotFound
 	}
 	return res, nil
 }

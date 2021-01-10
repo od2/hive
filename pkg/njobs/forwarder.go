@@ -13,10 +13,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// Reporter reads task results from Redis Streams and publishes them to Kafka.
+// ResultForwarder reads task results from Redis Streams and publishes them to Kafka.
 //
 // TODO It's not safe to run concurrently (yet).
-type Reporter struct {
+type ResultForwarder struct {
 	RedisClient *RedisClient
 	Producer    sarama.SyncProducer
 	Topic       string
@@ -24,7 +24,7 @@ type Reporter struct {
 }
 
 // Run moves task results from Redis Streams to Kafka.
-func (r *Reporter) Run(ctx context.Context) error {
+func (r *ResultForwarder) Run(ctx context.Context) error {
 	for {
 		if err := r.step(ctx); err != nil {
 			return err
@@ -33,7 +33,7 @@ func (r *Reporter) Run(ctx context.Context) error {
 }
 
 // step reads a batch of results from Redis Streams and moves them to Kafka.
-func (r *Reporter) step(ctx context.Context) error {
+func (r *ResultForwarder) step(ctx context.Context) error {
 	// Read results from Redis.
 	streams, err := r.RedisClient.Redis.XRead(ctx, &redis.XReadArgs{
 		Streams: []string{r.RedisClient.PartitionKeys.Results, "0-0"},

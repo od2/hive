@@ -8,7 +8,7 @@ import (
 	"go.od2.network/hive/pkg/token"
 )
 
-// TokenBackend fetches information about tokens.
+// Backend fetches information about tokens.
 type Backend interface {
 	LookupToken(ctx context.Context, id token.ID) (*TokenInfo, error)
 }

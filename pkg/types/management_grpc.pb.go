@@ -62,7 +62,7 @@ type UnsafeManagementServer interface {
 }
 
 func RegisterManagementServer(s grpc.ServiceRegistrar, srv ManagementServer) {
-	s.RegisterService(&_Management_serviceDesc, srv)
+	s.RegisterService(&Management_ServiceDesc, srv)
 }
 
 func _Management_CreateWorkerToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -83,7 +83,10 @@ func _Management_CreateWorkerToken_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-var _Management_serviceDesc = grpc.ServiceDesc{
+// Management_ServiceDesc is the grpc.ServiceDesc for Management service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var Management_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "od2_network.hive.Management",
 	HandlerType: (*ManagementServer)(nil),
 	Methods: []grpc.MethodDesc{

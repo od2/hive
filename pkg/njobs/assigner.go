@@ -29,7 +29,7 @@ type Assigner struct {
 	Metrics *AssignerMetrics
 }
 
-// ConsumeClaim starts streaming messages from Kafka in batches.
+// Run starts streaming messages from Kafka in batches.
 // The algorithm throttles Kafka consumption to match the speed at which nqueue workers consume.
 func (a *Assigner) Run(msgs <-chan *sarama.ConsumerMessage) error {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -148,10 +148,12 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 	}
 	atomic.StoreInt64(&s.Metrics.offset, lastOffset)
 	s.Metrics.assigns.Add(ctx, count)
-	s.Log.Debug("Assigning tasks",
-		zap.Int64("assigner.offset", lastOffset),
-		zap.Int64("assigner.count", count),
-		zap.Bool("assigner.ok", ok))
+	if count > 0 {
+		s.Log.Debug("Assigning tasks",
+			zap.Int64("assigner.offset", lastOffset),
+			zap.Int64("assigner.count", count),
+			zap.Bool("assigner.ok", ok))
+	}
 	// Move messages from window to channel.
 	for len(s.window) > 0 && s.window[0].Offset <= lastOffset {
 		s.window = s.window[1:]

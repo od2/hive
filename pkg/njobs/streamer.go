@@ -11,6 +11,8 @@ import (
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Streamer accepts connections from a worker and pushes down assignments.
@@ -71,6 +73,9 @@ func (s *Streamer) WantAssignments(
 	if err != nil {
 		return nil, err
 	}
+	if req.AddWatermark <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "negative assignment add count")
+	}
 	newQuota, err := s.AddSessionQuota(ctx, worker.WorkerID, req.StreamId, int64(req.AddWatermark))
 	if err != nil {
 		return nil, fmt.Errorf("failed to run addSessionQuota: %w", err)
@@ -78,6 +83,24 @@ func (s *Streamer) WantAssignments(
 	return &types.WantAssignmentsResponse{
 		Watermark:      int32(newQuota),
 		AddedWatermark: int32(newQuota), // TODO Check if that's the actual number added
+	}, nil
+}
+
+// SurrenderAssignments tells the server to reset all pending assignments.
+func (s *Streamer) SurrenderAssignments(
+	ctx context.Context,
+	req *types.SurrenderAssignmentsRequest,
+) (*types.SurrenderAssignmentsResponse, error) {
+	worker, err := auth.WorkerFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	removedQuota, err := s.ResetSessionQuota(ctx, worker.WorkerID, req.StreamId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run resetSessionQuota: %w", err)
+	}
+	return &types.SurrenderAssignmentsResponse{
+		RemovedWatermark: int32(removedQuota),
 	}, nil
 }
 
