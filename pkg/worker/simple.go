@@ -11,6 +11,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // TODO Handle server reporting stream as not found
@@ -292,7 +294,7 @@ func (s *session) numPending(ctx context.Context) (int32, error) {
 		pendingAssignCountRes, err := s.Assignments.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{
 			StreamId: s.streamID,
 		})
-		if errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 			return backoff.Permanent(err)
 		} else if err != nil {
 			return err
