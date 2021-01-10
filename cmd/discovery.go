@@ -1,16 +1,15 @@
 package main
 
 import (
-	"context"
 	"strings"
 
 	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.od2.network/hive/pkg/appctx"
 	"go.od2.network/hive/pkg/dedup"
 	"go.od2.network/hive/pkg/discovery"
 	"go.od2.network/hive/pkg/items"
+	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
 
@@ -18,7 +17,15 @@ var discoveryCmd = cobra.Command{
 	Use:   "discovery",
 	Short: "Run item discovery service.",
 	Args:  cobra.NoArgs,
-	Run:   runDiscovery,
+	Run: func(cmd *cobra.Command, _ []string) {
+		app := fx.New(
+			fx.Provide(providers),
+			fx.Supply(cmd),
+			fx.Invoke(runDiscovery),
+			fx.Logger(zap.NewStdLog(log)),
+		)
+		app.Run()
+	},
 }
 
 func init() {
@@ -30,10 +37,10 @@ func init() {
 	rootCmd.AddCommand(&discoveryCmd)
 }
 
-func runDiscovery(cmd *cobra.Command, _ []string) {
-	ctx, cancel := context.WithCancel(appctx.Context())
-	defer cancel()
-
+func runDiscovery(
+	cmd *cobra.Command,
+	saramaConfig *sarama.Config,
+) {
 	flags := cmd.Flags()
 	collection, err := flags.GetString("collection")
 	if err != nil {
@@ -58,7 +65,7 @@ func runDiscovery(cmd *cobra.Command, _ []string) {
 	discoveryTopic := collection + ".discovered"
 
 	// Connect to Kafka.
-	saramaClient := saramaClientFromEnv()
+	saramaClient := saramaClientFromEnv(saramaConfig)
 	defer func() {
 		if err := saramaClient.Close(); err != nil {
 			log.Error("Failed to close sarama client", zap.Error(err))

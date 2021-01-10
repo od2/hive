@@ -17,6 +17,7 @@ require (
 	github.com/stretchr/testify v1.6.1
 	go.opentelemetry.io/otel v0.15.0
 	go.opentelemetry.io/otel/exporters/metric/prometheus v0.15.0
+	go.uber.org/fx v1.13.1 // indirect
 	go.uber.org/zap v1.10.0
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	google.golang.org/grpc v1.34.0

@@ -141,7 +141,7 @@ func njobsOptionsFromEnv() *njobs.Options {
 	}
 }
 
-func saramaClientFromEnv() sarama.Client {
+func saramaConfigFromEnv() *sarama.Config {
 	// Since sarama has so many options, it's easiest to read in a file.
 	configFilePath := viper.GetString(ConfSaramaConfigFile)
 	if configFilePath == "" {
@@ -159,6 +159,10 @@ func saramaClientFromEnv() sarama.Client {
 	if err := dec.Decode(config); err != nil {
 		log.Fatal("Failed to read sarama config", zap.Error(err))
 	}
+	return config
+}
+
+func saramaClientFromEnv(config *sarama.Config) sarama.Client {
 	// Construct client.
 	addrs := viper.GetStringSlice(ConfSaramaAddrs)
 	log.Info("Connecting to Kafka (sarama)",

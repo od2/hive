@@ -7,10 +7,10 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
 	"github.com/spf13/cobra"
-	"go.od2.network/hive/pkg/appctx"
 	"go.od2.network/hive/pkg/njobs"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
+	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
 
@@ -21,40 +21,28 @@ var assignerCmd = cobra.Command{
 		"Only one assigner is required per partition.\n" +
 		"Running multiple assigners is allowed during surge upgrades.",
 	Args: cobra.NoArgs,
-	Run:  runAssigner,
+	Run: func(_ *cobra.Command, _ []string) {
+		app := fx.New(
+			fx.Provide(providers),
+			fx.Invoke(runAssigner),
+			fx.Logger(zap.NewStdLog(log)),
+		)
+		app.Run()
+	},
 }
 
 func init() {
 	rootCmd.AddCommand(&assignerCmd)
 }
 
-func runAssigner(_ *cobra.Command, _ []string) {
-	ctx, cancel := context.WithCancel(appctx.Context())
-	defer cancel()
+func runAssigner(
+	rc *njobs.RedisClient,
+	saramaConfig *sarama.Config,
+) {
 	// Create metrics.
 	meter := otel.GetMeterProvider().Meter("assigner")
-	// Connect to Redis.
-	rd := redisClientFromEnv()
-	scripts, err := njobs.LoadScripts(ctx, rd)
-	if err != nil {
-		log.Fatal("Failed to load njobs scripts", zap.Error(err))
-	}
-	defer func() {
-		log.Info("Closing Redis client")
-		if err := rd.Close(); err != nil {
-			log.Error("Failed to close Redis client", zap.Error(err))
-		}
-	}()
-	// Connect to njobs system.
-	topic, partition := kafkaPartitionFromEnv()
-	rc := njobs.RedisClient{
-		Redis:         rd,
-		PartitionKeys: njobs.NewPartitionKeys(topic, partition),
-		Scripts:       scripts,
-		Options:       njobsOptionsFromEnv(),
-	}
 	// Connect to Kafka.
-	saramaClient := saramaClientFromEnv()
+	saramaClient := saramaClientFromEnv(saramaConfig)
 	defer func() {
 		if err := saramaClient.Close(); err != nil {
 			log.Error("Failed to close sarama client", zap.Error(err))
@@ -104,7 +92,7 @@ func runAssigner(_ *cobra.Command, _ []string) {
 		log.Fatal("Failed to create metrics", zap.Error(err))
 	}
 	assigner := njobs.Assigner{
-		RedisClient: &rc,
+		RedisClient: rc,
 		Log:         log,
 		Metrics:     metrics,
 	}
