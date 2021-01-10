@@ -148,10 +148,12 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 	}
 	atomic.StoreInt64(&s.Metrics.offset, lastOffset)
 	s.Metrics.assigns.Add(ctx, count)
-	s.Log.Debug("Assigning tasks",
-		zap.Int64("assigner.offset", lastOffset),
-		zap.Int64("assigner.count", count),
-		zap.Bool("assigner.ok", ok))
+	if count > 0 {
+		s.Log.Debug("Assigning tasks",
+			zap.Int64("assigner.offset", lastOffset),
+			zap.Int64("assigner.count", count),
+			zap.Bool("assigner.ok", ok))
+	}
 	// Move messages from window to channel.
 	for len(s.window) > 0 && s.window[0].Offset <= lastOffset {
 		s.window = s.window[1:]
