@@ -62,21 +62,21 @@ func TestItemStore(t *testing.T) {
 		{ItemID: "3", FoundT: time.Unix(10, 0)},
 	}, scanItemStore(t, itemStore))
 	// Push a batch of task results.
-	require.NoError(t, itemStore.PushTaskResults(ctx, []*types.TaskResult{
+	require.NoError(t, itemStore.PushAssignmentResults(ctx, []*types.AssignmentResult{
 		{
-			Item:       &types.ItemLocator{Id: "2"},
+			Locator:    &types.ItemLocator{Id: "2"},
 			FinishTime: &timestamp.Timestamp{Seconds: 3},
 		},
 		{
-			Item:       &types.ItemLocator{Id: "2"},
+			Locator:    &types.ItemLocator{Id: "2"},
 			FinishTime: &timestamp.Timestamp{Seconds: 4},
 		},
 		{
-			Item:       &types.ItemLocator{Id: "3"},
+			Locator:    &types.ItemLocator{Id: "3"},
 			FinishTime: &timestamp.Timestamp{Seconds: 4},
 		},
 		{
-			Item:       &types.ItemLocator{Id: "4"},
+			Locator:    &types.ItemLocator{Id: "4"},
 			FinishTime: &timestamp.Timestamp{Seconds: 23},
 		},
 	}))

@@ -3,7 +3,6 @@ syntax = "proto3";
 package od2_network.hive;
 option go_package = "go.od2.network/hive/pkg/types";
 
-import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "items.proto";
 
@@ -11,15 +10,6 @@ enum TaskStatus {
   SUCCESS = 0;
   CLIENT_FAILURE = 1;
   TIMEOUT = 2;
-}
-
-message TaskResult {
-  ItemLocator item = 1;
-  int64 task_id = 2;
-  int64 pipeline = 3;
-  TaskStatus status = 4;
-  google.protobuf.Timestamp finish_time = 5;
-  google.protobuf.Duration duration = 6;
 }
 
 // Assignments streams task assignments to workers.
@@ -113,6 +103,8 @@ message AssignmentReport {
 message AssignmentResult {
   int64 worker_id = 1;
   AssignmentReport report = 2;
+  google.protobuf.Timestamp finish_time = 3;
+  ItemLocator locator = 4;
 }
 
 message ReportAssignmentsResponse {

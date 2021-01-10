@@ -17,6 +17,7 @@ import (
 	"go.od2.network/hive/cmd/github_auth"
 	"go.od2.network/hive/cmd/management_api"
 	"go.od2.network/hive/cmd/providers"
+	"go.od2.network/hive/cmd/reporter"
 	"go.od2.network/hive/cmd/worker_api"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/metric/prometheus"
@@ -101,6 +102,7 @@ func init() {
 		&discovery.Cmd,
 		&github_auth.Cmd,
 		&management_api.Cmd,
+		&reporter.Cmd,
 		&worker_api.Cmd,
 	)
 }

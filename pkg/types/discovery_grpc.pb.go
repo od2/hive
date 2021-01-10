@@ -64,7 +64,7 @@ type UnsafeDiscoveryServer interface {
 }
 
 func RegisterDiscoveryServer(s grpc.ServiceRegistrar, srv DiscoveryServer) {
-	s.RegisterService(&Discovery_ServiceDesc, srv)
+	s.RegisterService(&_Discovery_serviceDesc, srv)
 }
 
 func _Discovery_ReportDiscovered_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -85,10 +85,7 @@ func _Discovery_ReportDiscovered_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
-// Discovery_ServiceDesc is the grpc.ServiceDesc for Discovery service.
-// It's only intended for direct use with grpc.RegisterService,
-// and not to be introspected or modified (even as a copy)
-var Discovery_ServiceDesc = grpc.ServiceDesc{
+var _Discovery_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "od2_network.hive.Discovery",
 	HandlerType: (*DiscoveryServer)(nil),
 	Methods: []grpc.MethodDesc{

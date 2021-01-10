@@ -89,7 +89,7 @@ func (c *assignmentsClient) SurrenderAssignments(ctx context.Context, in *Surren
 }
 
 func (c *assignmentsClient) StreamAssignments(ctx context.Context, in *StreamAssignmentsRequest, opts ...grpc.CallOption) (Assignments_StreamAssignmentsClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Assignments_ServiceDesc.Streams[0], "/od2_network.hive.Assignments/StreamAssignments", opts...)
+	stream, err := c.cc.NewStream(ctx, &_Assignments_serviceDesc.Streams[0], "/od2_network.hive.Assignments/StreamAssignments", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ type UnsafeAssignmentsServer interface {
 }
 
 func RegisterAssignmentsServer(s grpc.ServiceRegistrar, srv AssignmentsServer) {
-	s.RegisterService(&Assignments_ServiceDesc, srv)
+	s.RegisterService(&_Assignments_serviceDesc, srv)
 }
 
 func _Assignments_OpenAssignmentsStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -319,10 +319,7 @@ func _Assignments_ReportAssignments_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-// Assignments_ServiceDesc is the grpc.ServiceDesc for Assignments service.
-// It's only intended for direct use with grpc.RegisterService,
-// and not to be introspected or modified (even as a copy)
-var Assignments_ServiceDesc = grpc.ServiceDesc{
+var _Assignments_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "od2_network.hive.Assignments",
 	HandlerType: (*AssignmentsServer)(nil),
 	Methods: []grpc.MethodDesc{

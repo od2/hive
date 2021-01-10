@@ -1,4 +1,4 @@
-package discovery
+package reporter
 
 import (
 	"context"
@@ -10,33 +10,28 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/cmd/providers"
-	"go.od2.network/hive/pkg/dedup"
-	"go.od2.network/hive/pkg/discovery"
 	"go.od2.network/hive/pkg/items"
+	"go.od2.network/hive/pkg/reporter"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
 
 var Cmd = cobra.Command{
-	Use:   "discovery",
-	Short: "Run item discovery service.",
+	Use:   "reporter",
+	Short: "Run result reporting service.",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
 		app := providers.NewApp(
 			cmd,
 			fx.Provide(
-				newDiscoveryFlags,
-				newDiscoveryItemsStore,
+				newReporterFlags,
+				newReporterItemsStore,
 				fx.Annotated{
-					Name:   "discovered_consumer",
-					Target: newDiscoveredConsumer,
-				},
-				fx.Annotated{
-					Name:   "tasks_producer",
-					Target: newDiscoveredProducer,
+					Name:   "reporter_consumer",
+					Target: newReporterConsumer,
 				},
 			),
-			fx.Invoke(runDiscovery),
+			fx.Invoke(runReporter),
 		)
 		app.Run()
 	},
@@ -49,24 +44,24 @@ func init() {
 	flags.String("pk-type", "", "Primary key type of item collection")
 }
 
-// Discovery config keys.
+// Reporter config keys.
 const (
-	ConfDiscoveryInterval = "discovery.interval"
-	ConfDiscoveryBatch    = "discovery.batch"
+	ConfReporterInterval = "reporter.interval"
+	ConfReporterBatch    = "reporter.batch"
 )
 
 func init() {
-	viper.SetDefault(ConfDiscoveryInterval, 2*time.Second)
-	viper.SetDefault(ConfDiscoveryBatch, uint(256))
+	viper.SetDefault(ConfReporterInterval, 2*time.Second)
+	viper.SetDefault(ConfReporterBatch, uint(256))
 }
 
-type discoveryFlags struct {
+type reporterFlags struct {
 	consumerGroup string
 	collection    string
 	pkType        string
 }
 
-func newDiscoveryFlags(cmd *cobra.Command, log *zap.Logger) *discoveryFlags {
+func newReporterFlags(cmd *cobra.Command, log *zap.Logger) *reporterFlags {
 	flags := cmd.Flags()
 	collection, err := flags.GetString("collection")
 	if err != nil {
@@ -89,16 +84,16 @@ func newDiscoveryFlags(cmd *cobra.Command, log *zap.Logger) *discoveryFlags {
 	if pkType == "" {
 		log.Fatal("Empty --pk-type")
 	}
-	return &discoveryFlags{
+	return &reporterFlags{
 		collection:    collection,
 		consumerGroup: consumerGroupName,
 		pkType:        pkType,
 	}
 }
 
-func newDiscoveryItemsStore(
+func newReporterItemsStore(
 	log *zap.Logger,
-	flags *discoveryFlags,
+	flags *reporterFlags,
 	db *sqlx.DB,
 ) *items.Store {
 	store := &items.Store{
@@ -112,11 +107,11 @@ func newDiscoveryItemsStore(
 	return store
 }
 
-func newDiscoveredConsumer(
-	log *zap.Logger,
-	flags *discoveryFlags,
-	saramaClient sarama.Client,
+func newReporterConsumer(
 	lc fx.Lifecycle,
+	log *zap.Logger,
+	flags *reporterFlags,
+	saramaClient sarama.Client,
 ) (sarama.ConsumerGroup, error) {
 	log.Info("Binding to Kafka consumer group",
 		zap.String("kafka.consumer_group", flags.consumerGroup))
@@ -133,72 +128,35 @@ func newDiscoveredConsumer(
 	return consumerGroup, nil
 }
 
-func newDiscoveredProducer(
-	lc fx.Lifecycle,
-	log *zap.Logger,
-	saramaClient sarama.Client,
-) (sarama.SyncProducer, error) {
-	producer, err := sarama.NewSyncProducerFromClient(saramaClient)
-	if err != nil {
-		return nil, err
-	}
-	lc.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			log.Info("Closing Kafka producer")
-			return producer.Close()
-		},
-	})
-	return producer, nil
-}
-
-type discoveryIn struct {
+type reporterIn struct {
 	fx.In
 
-	Lifecycle          fx.Lifecycle
-	Shutdown           fx.Shutdowner
-	Flags              *discoveryFlags
-	Items              *items.Store
-	TasksProducer      sarama.SyncProducer  `name:"tasks_producer"`
-	DiscoveredConsumer sarama.ConsumerGroup `name:"discovered_consumer"`
+	Lifecycle        fx.Lifecycle
+	Shutdown         fx.Shutdowner
+	Flags            *reporterFlags
+	Items            *items.Store
+	ReporterConsumer sarama.ConsumerGroup `name:"reporter_consumer"`
 }
 
-func runDiscovery(
+func runReporter(
 	log *zap.Logger,
-	inputs discoveryIn,
+	inputs reporterIn,
 ) {
-	tasksTopic := inputs.Flags.collection
-	discoveryTopic := inputs.Flags.collection + ".discovered"
-
-	// Connect to dedup.
-	// TODO Support bitmap dedup.
-	deduper := &dedup.SQL{Store: inputs.Items}
-
-	// Set up SQL dedup.
-	worker := &discovery.Worker{
-		Dedup:     deduper,
-		MaxDelay:  viper.GetDuration(ConfDiscoveryInterval),
-		BatchSize: viper.GetUint(ConfDiscoveryBatch),
-
+	worker := &reporter.Worker{
+		MaxDelay:  viper.GetDuration(ConfReporterInterval),
+		BatchSize: viper.GetUint(ConfReporterBatch),
 		ItemStore: inputs.Items,
-		KafkaSink: &discovery.KafkaSink{
-			Producer: inputs.TasksProducer,
-			Topic:    tasksTopic,
-		},
-		Log: log,
+		Log:       log,
 	}
-	log.Info("Producing new tasks",
-		zap.String("kafka.topic", tasksTopic))
-	log.Info("Consuming discovered items",
-		zap.String("kafka.discovered", discoveryTopic))
 	innerCtx, cancel := context.WithCancel(context.Background())
 	inputs.Lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			go func() {
 				defer inputs.Shutdown.Shutdown()
 				for {
-					if err := inputs.DiscoveredConsumer.Consume(
+					if err := inputs.ReporterConsumer.Consume(
 						innerCtx,
-						[]string{discoveryTopic},
+						[]string{inputs.Flags.collection + ".results"},
 						worker,
 					); err != nil {
 						log.Error("Consumer group exited", zap.Error(err))
