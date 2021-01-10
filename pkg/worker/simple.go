@@ -388,6 +388,17 @@ func (s *stream) pull(ctx context.Context, assigns chan<- *types.Assignment) err
 // The stream is determined to be dry when the server reports no more pending assignments.
 // It exits prematurely if the context is cancelled.
 func (s *stream) drain(assigns chan<- *types.Assignment) {
+	// Cut off stream from any more assignments.
+	res, err := s.Assignments.SurrenderAssignments(s.hardCtx, &types.SurrenderAssignmentsRequest{
+		StreamId: s.session.streamID,
+	})
+	if err != nil {
+		s.Log.Warn("Failed to surrender assignments", zap.Error(err))
+	} else {
+		if res.GetRemovedWatermark() > 0 {
+			s.Log.Info("Surrendered tasks", zap.Int32("surrendered_counts", res.GetRemovedWatermark()))
+		}
+	}
 	s.Log.Info("Draining stream from pending assignments")
 	for {
 		// Check for stream liveness.
