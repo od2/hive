@@ -155,7 +155,7 @@ func (w *Simple) Run(outerCtx context.Context) error {
 func (s *session) fill() error {
 	s.Log.Info("Starting session filler")
 	defer s.Log.Info("Stopping session filler")
-	ticker := time.NewTicker(1)
+	ticker := time.NewTicker(s.FillRate)
 	defer ticker.Stop()
 	loopBack := make(chan struct{}, 1)
 	defer close(loopBack)
@@ -271,18 +271,15 @@ func (s *session) worker(reports chan<- *types.AssignmentReport, assigns <-chan 
 			status := s.Handler.WorkAssignment(s.hardCtx, assign)
 			// Update pipeline state.
 			atomic.StoreInt32(&s.needsFill, 1)
-			atomic.AddInt32(&s.inflight, -1)
+			if atomic.AddInt32(&s.inflight, -1) < 0 {
+				panic("negative in-flight counter")
+			}
 			reports <- &types.AssignmentReport{
 				KafkaPointer: assign.GetKafkaPointer(),
 				Status:       status,
 			}
 		}
 	}
-}
-
-// addInflight increases the number of tasks in-flight.
-func (s *session) addInflight(num int32) {
-	atomic.AddInt32(&s.inflight, num)
 }
 
 // numPending fetches and returns an approximation of the number of tasks pending and in-flight.
@@ -378,6 +375,7 @@ func (s *stream) pull(ctx context.Context, assigns chan<- *types.Assignment) err
 			return fmt.Errorf("failed to recv assigns: %w", err)
 		}
 		assignBatch := assignBatchRes.GetAssignments()
+		atomic.AddInt32(&s.inflight, int32(len(assignBatch)))
 		s.Log.Debug("Fanning out items", zap.Int("num_assigns", len(assignBatch)))
 		for _, assign := range assignBatch {
 			assigns <- assign
