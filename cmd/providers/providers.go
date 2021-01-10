@@ -49,7 +49,7 @@ func NewApp(cmd *cobra.Command, opts ...fx.Option) *fx.App {
 func NewCmd(invoke interface{}) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		app := fx.New(
-			fx.Provide(Providers),
+			fx.Provide(Providers...),
 			fx.Supply(cmd),
 			fx.Supply(args),
 			fx.Supply(Log),
