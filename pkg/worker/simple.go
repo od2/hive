@@ -15,10 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// TODO Handle server reporting stream as not found
 // TODO Catch panics in workers
 // TODO Limit overall worker failures
-// TODO Naming: Rename "stream ID" to "session ID"
 // TODO Consider backoff for open/close
 
 // Simple is a works off items one-by-one from multiple routines.
@@ -49,7 +47,7 @@ type SimpleHandler interface {
 // A session dies when the worker failed to run a stream in a predefined duration.
 type session struct {
 	*Simple
-	streamID int64 // server-assigned session ID
+	sessionID int64 // server-assigned session ID
 
 	softCtx    context.Context
 	softCancel context.CancelFunc
@@ -93,7 +91,7 @@ func (w *Simple) Run(outerCtx context.Context) error {
 	reports := make(chan *types.AssignmentReport, w.ReportBatch) // Outgoing result reports
 	sess := &session{
 		Simple:     w,
-		streamID:   openStream.StreamId,
+		sessionID:  openStream.StreamId,
 		softCtx:    softCtx,
 		softCancel: softCancel,
 		hardCtx:    hardCtx,
@@ -251,7 +249,7 @@ func (r *reporter) flush() {
 // fillOnce requests the server to push more assignments with a single gRPC call.
 func (s *session) fillOnce(delta int32) (err error) {
 	_, err = s.Assignments.WantAssignments(s.softCtx, &types.WantAssignmentsRequest{
-		StreamId:     s.streamID,
+		StreamId:     s.sessionID,
 		AddWatermark: delta,
 	})
 	return err
@@ -289,7 +287,7 @@ func (s *session) numPending(ctx context.Context) (int32, error) {
 	var watermark int32
 	if err := backoff.RetryNotify(func() error {
 		pendingAssignCountRes, err := s.Assignments.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{
-			StreamId: s.streamID,
+			StreamId: s.sessionID,
 		})
 		if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 			return backoff.Permanent(err)
@@ -318,9 +316,11 @@ func (s *session) pull(assigns chan<- *types.Assignment) error {
 	return backoff.RetryNotify(func() error {
 		// Connect to stream.
 		grpcStream, err := s.Assignments.StreamAssignments(s.hardCtx, &types.StreamAssignmentsRequest{
-			StreamId: s.streamID,
+			StreamId: s.sessionID,
 		})
-		if err != nil {
+		if s, ok := status.FromError(err); ok && s.Code() == codes.NotFound {
+			return backoff.Permanent(fmt.Errorf("stream closed"))
+		} else if err != nil {
 			return err
 		}
 		defer grpcStream.CloseSend()
@@ -390,7 +390,7 @@ func (s *stream) pull(ctx context.Context, assigns chan<- *types.Assignment) err
 func (s *stream) drain(assigns chan<- *types.Assignment) {
 	// Cut off stream from any more assignments.
 	res, err := s.Assignments.SurrenderAssignments(s.hardCtx, &types.SurrenderAssignmentsRequest{
-		StreamId: s.session.streamID,
+		StreamId: s.session.sessionID,
 	})
 	if err != nil {
 		s.Log.Warn("Failed to surrender assignments", zap.Error(err))
