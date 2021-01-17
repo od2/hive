@@ -11,3 +11,4 @@ RUN \
 FROM alpine
 COPY --from=builder /app/hive /usr/local/bin/
 CMD ["/usr/local/bin/hive"]
+LABEL org.opencontainers.image.source="https://github.com/od2/hive"
