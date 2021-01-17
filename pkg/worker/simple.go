@@ -25,6 +25,7 @@ type Simple struct {
 	Assignments types.AssignmentsClient
 	Log         *zap.Logger
 	Handler     SimpleHandler
+	Collection  string
 
 	// Options
 	Routines      uint            // Number of worker routines
@@ -72,14 +73,17 @@ func (w *Simple) Run(outerCtx context.Context) error {
 	hardCtx, hardCancel := context.WithCancel(context.Background())
 	defer hardCancel()
 	// Allocate stream.
-	openStream, err := w.Assignments.OpenAssignmentsStream(softCtx, &types.OpenAssignmentsStreamRequest{})
+	openStream, err := w.Assignments.OpenAssignmentsStream(softCtx, &types.OpenAssignmentsStreamRequest{
+		Collection: w.Collection,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to open stream: %w", err)
 	}
 	w.Log.Info("Opened stream")
 	defer func() {
 		_, err := w.Assignments.CloseAssignmentsStream(hardCtx, &types.CloseAssignmentsStreamRequest{
-			StreamId: openStream.StreamId,
+			StreamId:   openStream.StreamId,
+			Collection: w.Collection,
 		})
 		if err != nil {
 			w.Log.Error("Error closing stream", zap.Error(err))
@@ -231,7 +235,8 @@ func (r *reporter) flush() {
 	}
 	if err := backoff.RetryNotify(func() error {
 		_, err := r.Assignments.ReportAssignments(r.hardCtx, &types.ReportAssignmentsRequest{
-			Reports: r.batch,
+			Reports:    r.batch,
+			Collection: r.Collection,
 		})
 		return err
 	}, r.APIBackoff, func(err error, dur time.Duration) {
@@ -251,6 +256,7 @@ func (s *session) fillOnce(delta int32) (err error) {
 	_, err = s.Assignments.WantAssignments(s.softCtx, &types.WantAssignmentsRequest{
 		StreamId:     s.sessionID,
 		AddWatermark: delta,
+		Collection:   s.Collection,
 	})
 	return err
 }
@@ -287,7 +293,8 @@ func (s *session) numPending(ctx context.Context) (int32, error) {
 	var watermark int32
 	if err := backoff.RetryNotify(func() error {
 		pendingAssignCountRes, err := s.Assignments.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{
-			StreamId: s.sessionID,
+			StreamId:   s.sessionID,
+			Collection: s.Collection,
 		})
 		if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 			return backoff.Permanent(err)
@@ -316,7 +323,8 @@ func (s *session) pull(assigns chan<- *types.Assignment) error {
 	return backoff.RetryNotify(func() error {
 		// Connect to stream.
 		grpcStream, err := s.Assignments.StreamAssignments(s.hardCtx, &types.StreamAssignmentsRequest{
-			StreamId: s.sessionID,
+			StreamId:   s.sessionID,
+			Collection: s.Collection,
 		})
 		if s, ok := status.FromError(err); ok && s.Code() == codes.NotFound {
 			return backoff.Permanent(fmt.Errorf("stream closed"))
@@ -390,7 +398,8 @@ func (s *stream) pull(ctx context.Context, assigns chan<- *types.Assignment) err
 func (s *stream) drain(assigns chan<- *types.Assignment) {
 	// Cut off stream from any more assignments.
 	res, err := s.Assignments.SurrenderAssignments(s.hardCtx, &types.SurrenderAssignmentsRequest{
-		StreamId: s.session.sessionID,
+		StreamId:   s.session.sessionID,
+		Collection: s.Collection,
 	})
 	if err != nil {
 		s.Log.Warn("Failed to surrender assignments", zap.Error(err))

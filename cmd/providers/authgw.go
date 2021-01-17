@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Worker auth gateway config.
 const (
 	ConfAuthgwSecret         = "authgw.secret"
 	ConfAuthgwCacheSize      = "authgw.cache.size"

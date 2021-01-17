@@ -9,6 +9,8 @@ import (
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/discovery"
 	"go.od2.network/hive/pkg/njobs"
+	"go.od2.network/hive/pkg/topology"
+	"go.od2.network/hive/pkg/topology/redisshard"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -27,10 +29,6 @@ var Cmd = cobra.Command{
 			fx.Provide(
 				newWorkerAPIFlags,
 				runWorkerAPI,
-				fx.Annotated{
-					Name:   "worker_api_producer",
-					Target: newWorkerAPIProducer,
-				},
 			),
 			fx.Invoke(
 				newDiscoveryServer,
@@ -61,35 +59,13 @@ func newWorkerAPIFlags(cmd *cobra.Command) *workerAPIFlags {
 	}
 }
 
-func newWorkerAPIProducer(
-	lc fx.Lifecycle,
+func newDiscoveryServer(
 	log *zap.Logger,
-	saramaClient sarama.Client,
-) (sarama.SyncProducer, error) {
-	log.Info("Creating Kafka producer")
-	producer, err := sarama.NewSyncProducerFromClient(saramaClient)
-	if err != nil {
-		return nil, err
-	}
-	lc.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			log.Info("Closing Kafka producer")
-			return producer.Close()
-		},
-	})
-	return producer, nil
-}
-
-type discoveryServerIn struct {
-	fx.In
-
-	Server   *grpc.Server
-	Producer sarama.SyncProducer `name:"worker_api_producer"`
-}
-
-func newDiscoveryServer(log *zap.Logger, inputs discoveryServerIn) {
-	types.RegisterDiscoveryServer(inputs.Server, &discovery.Handler{
-		Producer: inputs.Producer,
+	server *grpc.Server,
+	producer sarama.SyncProducer,
+) {
+	types.RegisterDiscoveryServer(server, &discovery.Handler{
+		Producer: producer,
 		Log:      log.Named("discovery"),
 	})
 }
@@ -97,11 +73,13 @@ func newDiscoveryServer(log *zap.Logger, inputs discoveryServerIn) {
 func newAssignmentsServer(
 	log *zap.Logger,
 	server *grpc.Server,
-	rc *njobs.RedisClient,
+	topology *topology.Config,
+	factory redisshard.Factory,
 ) {
 	streamer := njobs.Streamer{
-		RedisClient: rc,
-		Log:         log.Named("worker"),
+		Topology: topology,
+		Factory:  factory,
+		Log:      log.Named("worker"),
 	}
 	types.RegisterAssignmentsServer(server, &streamer)
 }

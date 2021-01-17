@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/redistest"
+	"go.od2.network/hive/pkg/topology"
+	"go.od2.network/hive/pkg/topology/redisshard"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
@@ -31,23 +33,34 @@ func TestNJobs(t *testing.T) {
 	defer rd.Close()
 
 	const topic = "test"
-	const partition = int32(1)
+	const partition = int32(0)
 	const worker1 = int64(1)
 	const unixTime1 = int64(1)
 
 	// Build njobs Redis client.
+	mockCollection1 := new(topology.Collection)
+	mockCollection1.Init()
+	mockCollection1.Name = topic
+	mockCollection1.PKType = "BIGINT"
+	mockCollection1.TaskAssignments = 1
 	rc := RedisClient{
 		Redis:         rd.Client,
-		Options:       new(Options),
+		Collection:    mockCollection1,
 		PartitionKeys: NewPartitionKeys(topic, partition),
-		Scripts:       NewScripts(),
+		Scripts:       GetScripts(),
 	}
-	*rc.Options = DefaultOptions
-	rc.Options.TaskAssignments = 1
+
 	// Build task streamer server.
 	streamer := Streamer{
-		RedisClient: &rc,
-		Log:         zaptest.NewLogger(t),
+		Topology: &topology.Config{
+			Collections: []*topology.Collection{mockCollection1},
+			RedisShardFactory: &topology.RedisShardFactory{
+				Type:       "Standalone",
+				Standalone: topology.RedisShardFactoryStandalone{},
+			},
+		},
+		Factory: &redisshard.StandaloneFactory{Redis: rd.Client},
+		Log:     zaptest.NewLogger(t),
 	}
 	lis := bufconn.Listen(1024 * 1024)
 	defer lis.Close()
@@ -88,14 +101,19 @@ func TestNJobs(t *testing.T) {
 	//consumer.ExpectConsumePartition("test", 1, 0).YieldMessage()
 	//consumer.ConsumePartition("test", 1, 0)
 
+	defer cancel()
+
 	// Try consuming messages on non-existent session.
-	assignStream1, err := client.StreamAssignments(ctx, &types.StreamAssignmentsRequest{StreamId: 1})
+	assignStream1, err := client.StreamAssignments(ctx, &types.StreamAssignmentsRequest{
+		StreamId:   1,
+		Collection: topic,
+	})
 	require.NoError(t, err)
 	_, err = assignStream1.Recv()
 	require.EqualError(t, err, "rpc error: code = NotFound desc = session not found")
 
 	// Create a new session.
-	sessionID1, err := streamer.EvalStartSession(ctx, worker1, unixTime1)
+	sessionID1, err := rc.EvalStartSession(ctx, worker1, unixTime1)
 	require.NoError(t, err)
 	t.Logf("Started worker=%d session=%d", worker1, sessionID1)
 
@@ -103,6 +121,7 @@ func TestNJobs(t *testing.T) {
 	res, err := client.WantAssignments(ctx, &types.WantAssignmentsRequest{
 		StreamId:     sessionID1,
 		AddWatermark: 5,
+		Collection:   "test",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, int32(5), res.AddedWatermark)
@@ -110,19 +129,21 @@ func TestNJobs(t *testing.T) {
 	t.Logf("WantAssignments: worker=%d session=%d watermark=%d", worker1, sessionID1, res.Watermark)
 
 	// Check that client was moved to active set.
-	require.NoError(t, streamer.Redis.ZScore(ctx, rc.PartitionKeys.ActiveWorkers,
+	require.NoError(t, rc.Redis.ZScore(ctx, rc.PartitionKeys.ActiveWorkers,
 		redisWorkerKey(worker1)).Err(), "worker not activated")
 
 	// Check the pending assignment count.
 	pending1Res, err := client.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{
-		StreamId: sessionID1,
+		StreamId:   sessionID1,
+		Collection: topic,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, pending1Res.Watermark, int32(5))
 
 	// Check the pending assignment count for a non-existent session.
 	pending2Res, err := client.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{
-		StreamId: 9999,
+		StreamId:   9999,
+		Collection: topic,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, pending2Res.Watermark, int32(0))
@@ -138,13 +159,16 @@ func TestNJobs(t *testing.T) {
 			Offset:    128 + int64(i),
 		}
 	}
-	offset, count, err := streamer.evalAssignTasks(ctx, msgBatch)
+	offset, count, err := rc.evalAssignTasks(ctx, msgBatch)
 	assert.EqualError(t, err, "no workers available")
 	assert.Equal(t, int64(5), count)
 	require.Equal(t, int64(132), offset, "wrong tasks assigned")
 
 	// Try consuming messages on an existing session.
-	assignStream2, err := client.StreamAssignments(ctx, &types.StreamAssignmentsRequest{StreamId: sessionID1})
+	assignStream2, err := client.StreamAssignments(ctx, &types.StreamAssignmentsRequest{
+		StreamId:   sessionID1,
+		Collection: topic,
+	})
 	require.NoError(t, err)
 	t.Log("Started assignments stream")
 	batch, err := assignStream2.Recv()
@@ -171,7 +195,8 @@ func TestNJobs(t *testing.T) {
 		}
 	}
 	_, err = client.ReportAssignments(ctx, &types.ReportAssignmentsRequest{
-		Reports: reports,
+		Reports:    reports,
+		Collection: topic,
 	})
 	require.NoError(t, err)
 
@@ -226,7 +251,7 @@ func TestNJobs(t *testing.T) {
 	}, queue1)
 
 	// Shut down session.
-	require.NoError(t, streamer.EvalStopSession(ctx, worker1, sessionID1))
+	require.NoError(t, rc.EvalStopSession(ctx, worker1, sessionID1))
 	t.Logf("Stopped session %d for worker %d", sessionID1, worker1)
 
 	// Read all results from Redis.

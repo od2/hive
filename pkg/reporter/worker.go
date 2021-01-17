@@ -7,6 +7,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
 	"go.od2.network/hive/pkg/items"
+	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 )
@@ -15,8 +16,8 @@ type Worker struct {
 	MaxDelay  time.Duration
 	BatchSize uint
 
-	ItemStore *items.Store
-	Log       *zap.Logger
+	Factory *items.Factory
+	Log     *zap.Logger
 }
 
 // Setup is called by sarama when the consumer group member starts.
@@ -30,9 +31,27 @@ func (w *Worker) Cleanup(_ sarama.ConsumerGroupSession) error {
 }
 
 // ConsumeClaim runs the consumer loop. It reads batches of messages from Kafka.
-func (w *Worker) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+func (w *Worker) ConsumeClaim(
+	saramaSession sarama.ConsumerGroupSession,
+	claim sarama.ConsumerGroupClaim,
+) error {
+	// Connect to shard.
+	collectionName := topology.CollectionOfTopic(claim.Topic())
+	if collectionName == "" {
+		return fmt.Errorf("invalid topic: %s", claim.Topic())
+	}
+	itemsStore, err := w.Factory.GetStore(collectionName)
+	if err != nil {
+		return fmt.Errorf("failed to connect to collection (%s): %w", collectionName, err)
+	}
+	sess := session{
+		Worker:  w,
+		session: saramaSession,
+		claim:   claim,
+		items:   itemsStore,
+	}
 	for {
-		ok, err := w.nextBatch(session, claim)
+		ok, err := sess.nextBatch()
 		if err != nil {
 			return err
 		}
@@ -42,21 +61,29 @@ func (w *Worker) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.
 	}
 }
 
-func (w *Worker) nextBatch(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) (bool, error) {
-	ctx := session.Context()
-	timer := time.NewTimer(w.MaxDelay)
+type session struct {
+	*Worker
+	collection string
+	session    sarama.ConsumerGroupSession
+	claim      sarama.ConsumerGroupClaim
+	items      *items.Store
+}
+
+func (s *session) nextBatch() (bool, error) {
+	ctx := s.session.Context()
+	timer := time.NewTimer(s.MaxDelay)
 	defer timer.Stop()
 	// Read message batch from Kafka.
 	var results []*types.AssignmentResult
 	var offset int64
 readLoop:
-	for i := uint(0); i < w.BatchSize; i++ {
+	for i := uint(0); i < s.BatchSize; i++ {
 		select {
 		case <-timer.C:
 			break readLoop
-		case msg, ok := <-claim.Messages():
+		case msg, ok := <-s.claim.Messages():
 			if !ok {
-				w.Log.Info("Incoming messages channel closed")
+				s.Log.Info("Incoming messages channel closed")
 				return false, nil
 			}
 			offset = msg.Offset
@@ -70,12 +97,14 @@ readLoop:
 	if len(results) <= 0 {
 		return true, nil
 	}
-	w.Log.Debug("Read batch", zap.Int("result_count", len(results)))
+	s.Log.Debug("Read batch", zap.Int("result_count", len(results)))
 	// Run batch through dedup.
-	w.ItemStore.PushAssignmentResults(ctx, results)
+	if err := s.items.PushAssignmentResults(ctx, results); err != nil {
+		return false, err
+	}
 	// Tell Kafka about consumer progress.
-	session.MarkOffset(claim.Topic(), claim.Partition(), offset+1, "")
-	session.Commit()
-	w.Log.Debug("Flushed batch")
+	s.session.MarkOffset(s.claim.Topic(), s.claim.Partition(), offset+1, "")
+	s.session.Commit()
+	s.Log.Debug("Flushed batch")
 	return true, nil
 }

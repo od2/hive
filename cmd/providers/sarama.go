@@ -61,3 +61,42 @@ func NewSaramaClient(lc fx.Lifecycle, log *zap.Logger, config *sarama.Config) (s
 	})
 	return client, nil
 }
+
+func GetSaramaConsumerGroup(
+	lc fx.Lifecycle,
+	log *zap.Logger,
+	cl sarama.Client,
+) (sarama.ConsumerGroup, error) {
+	consumerGroupName := viper.GetString(ConfInstanceConsumerGroup)
+	log.Info("Binding to Kafka consumer group",
+		zap.String("kafka.consumer_group", consumerGroupName))
+	consumerGroup, err := sarama.NewConsumerGroupFromClient(consumerGroupName, cl)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			log.Info("Closing Kafka consumer group client")
+			return consumerGroup.Close()
+		},
+	})
+	return consumerGroup, nil
+}
+
+func NewSaramaSyncProducer(
+	log *zap.Logger,
+	saramaClient sarama.Client,
+	lc fx.Lifecycle,
+) (sarama.SyncProducer, error) {
+	producer, err := sarama.NewSyncProducerFromClient(saramaClient)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{
+		OnStop: func(ctx context.Context) error {
+			log.Info("Closing Kafka producer")
+			return producer.Close()
+		},
+	})
+	return producer, nil
+}

@@ -12,13 +12,17 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/Shopify/sarama/mocks"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/redistest"
+	"go.od2.network/hive/pkg/saramamock"
 	"go.od2.network/hive/pkg/token"
+	"go.od2.network/hive/pkg/topology"
+	"go.od2.network/hive/pkg/topology/redisshard"
 	"go.od2.network/hive/pkg/types"
 	"go.od2.network/hive/pkg/worker"
 	"go.opentelemetry.io/otel/metric"
@@ -34,34 +38,40 @@ func TestBenchmark(t *testing.T) {
 		short bool
 		opts  *benchOptions
 	}
+	mockCollection1 := new(topology.Collection)
+	mockCollection1.Init()
+	mockCollection1.Name = "test"
+	mockCollection1.PKType = "BIGINT"
 	cases := []testCaseDef{
 		{
 			name:  "Tiny",
 			short: true,
 			opts: &benchOptions{
-				Options:  DefaultOptions,
-				Workers:  2 * DefaultOptions.TaskAssignments,
-				Sessions: 1,
-				Assigns:  2,
-				QoS:      4,
+				Collection: mockCollection1,
+				Workers:    6,
+				Sessions:   1,
+				Assigns:    2,
+				QoS:        4,
 			},
 		},
 		{
 			name:  "Warmup",
 			short: false,
 			opts: &benchOptions{
-				Options:  DefaultOptions,
-				Workers:  32,
-				Sessions: 2,
-				Assigns:  50000,
-				QoS:      128,
+				Collection: mockCollection1,
+				Workers:    32,
+				Sessions:   2,
+				Assigns:    50000,
+				QoS:        128,
 			},
 		},
 		{
 			name:  "Assign100000_Sessions64_Batch512",
 			short: false,
 			opts: &benchOptions{
-				Options: Options{
+				Collection: &topology.Collection{
+					Name:                   "test",
+					PKType:                 "BIGINT",
 					TaskAssignments:        3,
 					AssignInterval:         250 * time.Millisecond,
 					AssignBatch:            512,
@@ -84,30 +94,18 @@ func TestBenchmark(t *testing.T) {
 			name:  "Assign100000_Sessions64_Batch1024",
 			short: false,
 			opts: &benchOptions{
-				Options: Options{
-					TaskAssignments:        3,
-					AssignInterval:         250 * time.Millisecond,
-					AssignBatch:            1024,
-					SessionTimeout:         5 * time.Minute,
-					SessionRefreshInterval: 3 * time.Second,
-					SessionExpireInterval:  10 * time.Second,
-					SessionExpireBatch:     16,
-					TaskTimeout:            time.Minute,
-					TaskExpireInterval:     2 * time.Second,
-					TaskExpireBatch:        128,
-					DeliverBatch:           1024,
-				},
-				Workers:  32,
-				Sessions: 2,
-				Assigns:  100000,
-				QoS:      1024,
+				Collection: &topology.Collection{},
+				Workers:    32,
+				Sessions:   2,
+				Assigns:    100000,
+				QoS:        1024,
 			},
 		},
 		{
 			name:  "Assign100000_Sessions64_Batch2048",
 			short: false,
 			opts: &benchOptions{
-				Options: Options{
+				Collection: &topology.Collection{
 					TaskAssignments:        3,
 					AssignInterval:         250 * time.Millisecond,
 					AssignBatch:            2048,
@@ -130,7 +128,7 @@ func TestBenchmark(t *testing.T) {
 			name:  "Assign100000_Sessions1024_Batch32",
 			short: false,
 			opts: &benchOptions{
-				Options: Options{
+				Collection: &topology.Collection{
 					TaskAssignments:        3,
 					AssignInterval:         250 * time.Millisecond,
 					AssignBatch:            2048,
@@ -162,7 +160,7 @@ func TestBenchmark(t *testing.T) {
 
 type benchOptions struct {
 	// Pipeline settings
-	Options
+	*topology.Collection
 	Topic     string
 	Partition int32
 	// Benchmark settings
@@ -196,27 +194,37 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	ctx, cancel := context.WithCancel(context.Background())
 	redis := redistest.NewRedis(ctx, t)
 	innerCtx, innerCancel := context.WithCancel(ctx)
-	const topic, partition = "test", int32(2)
 
-	// Build njobs Redis client.
-	rc := &RedisClient{
-		Redis:         redis.Client,
-		Options:       &opts.Options,
-		PartitionKeys: NewPartitionKeys(topic, partition),
-		Scripts:       NewScripts(),
+	// Fake topology.
+	redisFactory := &redisshard.StandaloneFactory{Redis: redis.Client}
+	rd, err := redisFactory.GetShard(topology.Shard{Collection: "test", Partition: int32(2)})
+	require.NoError(t, err)
+	collection := new(topology.Collection)
+	collection.Init()
+	collection.Name = "test"
+	topo := &topology.Config{
+		Collections: []*topology.Collection{collection},
+		RedisShardFactory: &topology.RedisShardFactory{
+			Type:       "Standalone",
+			Standalone: topology.RedisShardFactoryStandalone{Client: rd},
+		},
 	}
+
 	// Build assigner.
 	metrics, err := NewAssignerMetrics(metric.NoopMeterProvider{}.Meter(""))
 	require.NoError(t, err)
 	assigner := &Assigner{
-		RedisClient: rc,
-		Log:         zaptest.NewLogger(t),
-		Metrics:     metrics,
+		RedisFactory: redisFactory,
+		Producer:     mocks.NewSyncProducer(t, sarama.NewConfig()),
+		Topology:     topo,
+		Log:          zaptest.NewLogger(t),
+		Metrics:      metrics,
 	}
 	// Build streamer.
 	streamer := &Streamer{
-		RedisClient: rc,
-		Log:         zap.NewNop(),
+		Topology: topo,
+		Factory:  redisFactory,
+		Log:      zap.NewNop(),
 	}
 	// Build fake network listener.
 	lis := bufconn.Listen(1024 * 1024)
@@ -239,10 +247,15 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	// Connect to Redis.
 	return &benchStack{
 		// Environment
-		T:           t,
-		Log:         zaptest.NewLogger(t),
-		Redis:       redis,
-		RedisClient: rc,
+		T:     t,
+		Log:   zaptest.NewLogger(t),
+		Redis: redis,
+		RedisClient: &RedisClient{
+			Redis:         rd,
+			Collection:    collection,
+			PartitionKeys: PartitionKeys{},
+			Scripts:       GetScripts(),
+		},
 		signer:      signer,
 		opts:        opts,
 		ctx:         ctx,
@@ -290,7 +303,12 @@ func runBenchmark(t *testing.T, opts *benchOptions) {
 	go func() {
 		defer wg.Done()
 		defer stack.innerCancel()
-		err := stack.assigner.Run(msgs)
+		claim := &saramamock.ConsumerGroupClaimChan{
+			MsgChan: msgs,
+			MTopic:  "test",
+		}
+		session := &saramamock.ConsumerGroupSession{}
+		err := stack.assigner.ConsumeClaim(session, claim)
 		t.Log("Sarama claim consumer exited with:", err)
 	}()
 	// Start streamer server.
@@ -339,6 +357,7 @@ func (stack *benchStack) runClient(ctx context.Context, workerID int64) {
 		Assignments:   client,
 		Log:           zap.NewNop(),
 		Handler:       &noopHandler{stack},
+		Collection:    "test",
 		Routines:      1,
 		Prefetch:      4,
 		GracePeriod:   10 * time.Second,

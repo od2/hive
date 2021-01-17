@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"go.od2.network/hive/pkg/auth"
+	"go.od2.network/hive/pkg/topology"
+	"go.od2.network/hive/pkg/topology/redisshard"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -20,23 +22,45 @@ import (
 // Re-connecting and running multiple connections is also supported.
 // When the worker is absent for too long, the streamer shuts down.
 type Streamer struct {
-	*RedisClient
-	Log *zap.Logger
+	Topology *topology.Config
+	Factory  redisshard.Factory
+	Log      *zap.Logger
 
 	types.UnimplementedAssignmentsServer
+}
+
+func (s *Streamer) getRedis(collection string) (*RedisClient, error) {
+	// TODO Support partitions
+	if collection == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing collection param")
+	}
+	coll := s.Topology.GetCollection(collection)
+	if coll == nil {
+		return nil, status.Error(codes.NotFound, "no such collection: "+collection)
+	}
+	shard := topology.Shard{Collection: collection}
+	rd, err := s.Factory.GetShard(shard)
+	if err != nil {
+		return nil, err
+	}
+	return NewRedisClient(rd, &shard, coll)
 }
 
 // OpenAssignmentsStream creates a new njobs session.
 func (s *Streamer) OpenAssignmentsStream(
 	ctx context.Context,
-	_ *types.OpenAssignmentsStreamRequest,
+	req *types.OpenAssignmentsStreamRequest,
 ) (*types.OpenAssignmentsStreamResponse, error) {
 	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
+	rc, err := s.getRedis(req.GetCollection())
+	if err != nil {
+		return nil, err
+	}
 	nowUnix := time.Now().Unix()
-	session, err := s.EvalStartSession(ctx, worker.WorkerID, nowUnix)
+	session, err := rc.EvalStartSession(ctx, worker.WorkerID, nowUnix)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +71,7 @@ func (s *Streamer) OpenAssignmentsStream(
 	}, nil
 }
 
-// StopWork halts the message stream making the worker shut down.
+// CloseAssignmentsStream halts the message stream making the worker shut down.
 func (s *Streamer) CloseAssignmentsStream(
 	ctx context.Context,
 	req *types.CloseAssignmentsStreamRequest,
@@ -56,7 +80,11 @@ func (s *Streamer) CloseAssignmentsStream(
 	if err != nil {
 		return nil, err
 	}
-	if err := s.EvalStopSession(ctx, worker.WorkerID, req.StreamId); err != nil {
+	rc, err := s.getRedis(req.GetCollection())
+	if err != nil {
+		return nil, err
+	}
+	if err := rc.EvalStopSession(ctx, worker.WorkerID, req.StreamId); err != nil {
 		return nil, err
 	}
 	s.Log.Info("Success CloseAssignmentsStream()",
@@ -76,7 +104,11 @@ func (s *Streamer) WantAssignments(
 	if req.AddWatermark <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "negative assignment add count")
 	}
-	newQuota, err := s.AddSessionQuota(ctx, worker.WorkerID, req.StreamId, int64(req.AddWatermark))
+	rc, err := s.getRedis(req.GetCollection())
+	if err != nil {
+		return nil, err
+	}
+	newQuota, err := rc.AddSessionQuota(ctx, worker.WorkerID, req.StreamId, int64(req.AddWatermark))
 	if err != nil {
 		return nil, fmt.Errorf("failed to run addSessionQuota: %w", err)
 	}
@@ -95,7 +127,11 @@ func (s *Streamer) SurrenderAssignments(
 	if err != nil {
 		return nil, err
 	}
-	removedQuota, err := s.ResetSessionQuota(ctx, worker.WorkerID, req.StreamId)
+	rc, err := s.getRedis(req.GetCollection())
+	if err != nil {
+		return nil, err
+	}
+	removedQuota, err := rc.ResetSessionQuota(ctx, worker.WorkerID, req.StreamId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run resetSessionQuota: %w", err)
 	}
@@ -104,7 +140,7 @@ func (s *Streamer) SurrenderAssignments(
 	}, nil
 }
 
-// GetPendingAssignmentCount returns the number of task assignments
+// GetPendingAssignmentsCount returns the number of task assignments
 // that are not delivered to the client yet, but which are queued for the near future.
 func (s *Streamer) GetPendingAssignmentsCount(
 	ctx context.Context,
@@ -117,7 +153,11 @@ func (s *Streamer) GetPendingAssignmentsCount(
 	var sessionKey [16]byte
 	binary.BigEndian.PutUint64(sessionKey[:8], uint64(worker.WorkerID))
 	binary.BigEndian.PutUint64(sessionKey[8:], uint64(req.StreamId))
-	count, err := s.Redis.HGet(ctx, s.PartitionKeys.SessionQuota, string(sessionKey[:])).Int64()
+	rc, err := s.getRedis(req.GetCollection())
+	if err != nil {
+		return nil, err
+	}
+	count, err := rc.Redis.HGet(ctx, rc.PartitionKeys.SessionQuota, string(sessionKey[:])).Int64()
 	if errors.Is(err, redis.Nil) {
 		count = 0
 	} else if err != nil {
@@ -138,8 +178,12 @@ func (s *Streamer) StreamAssignments(
 	if err != nil {
 		return err
 	}
+	rc, err := s.getRedis(req.GetCollection())
+	if err != nil {
+		return err
+	}
 	// Check if stream ID exists.
-	_, zscoreErr := s.Redis.ZScore(ctx, s.PartitionKeys.SessionExpires,
+	_, zscoreErr := rc.Redis.ZScore(ctx, rc.PartitionKeys.SessionExpires,
 		redisSessionKey(worker.WorkerID, req.StreamId)).Result()
 	if errors.Is(zscoreErr, redis.Nil) {
 		return ErrSessionNotFound
@@ -149,7 +193,7 @@ func (s *Streamer) StreamAssignments(
 	// Create new Redis Streams consumer session.
 	assignmentsC := make(chan []*types.Assignment)
 	session := Session{
-		RedisClient: s.RedisClient,
+		RedisClient: rc,
 		Worker:      worker.WorkerID,
 		Session:     req.StreamId,
 	}
@@ -187,7 +231,11 @@ func (s *Streamer) ReportAssignments(
 	if err != nil {
 		return nil, err
 	}
-	count, err := s.EvalAck(ctx, worker.WorkerID, req.Reports)
+	rc, err := s.getRedis(req.GetCollection())
+	if err != nil {
+		return nil, err
+	}
+	count, err := rc.EvalAck(ctx, worker.WorkerID, req.Reports)
 	if err != nil {
 		return nil, err
 	}

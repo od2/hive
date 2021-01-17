@@ -56,8 +56,8 @@ func (m *ConsumerGroupSession) Context() context.Context {
 
 var _ sarama.ConsumerGroupSession = (*ConsumerGroupSession)(nil)
 
-// ConsumerGroupClaim is a fake sarama.ConsumerGroupClaim.
-type ConsumerGroupClaim struct {
+// ConsumerGroupClaimGenerate is a fake sarama.ConsumerGroupClaim that generates messages.
+type ConsumerGroupClaimGenerate struct {
 	// NextMessage generates a Kafka message. Does not need to be thread-safe.
 	NextMessage func() *sarama.ConsumerMessage
 	msgChan     chan *sarama.ConsumerMessage
@@ -70,38 +70,38 @@ type ConsumerGroupClaim struct {
 }
 
 // Init must be called before using other methods.
-func (c *ConsumerGroupClaim) Init() {
+func (c *ConsumerGroupClaimGenerate) Init() {
 	c.msgChan = make(chan *sarama.ConsumerMessage)
 }
 
 // Topic returns the saved value.
-func (c *ConsumerGroupClaim) Topic() string {
+func (c *ConsumerGroupClaimGenerate) Topic() string {
 	return c.MTopic
 }
 
 // Partition returns the saved value.
-func (c *ConsumerGroupClaim) Partition() int32 {
+func (c *ConsumerGroupClaimGenerate) Partition() int32 {
 	return c.MPartition
 }
 
 // InitialOffset returns the saved value.
-func (c *ConsumerGroupClaim) InitialOffset() int64 {
+func (c *ConsumerGroupClaimGenerate) InitialOffset() int64 {
 	return c.MInitialOffset
 }
 
 // HighWaterMarkOffset returns the saved offset.
-func (c *ConsumerGroupClaim) HighWaterMarkOffset() int64 {
+func (c *ConsumerGroupClaimGenerate) HighWaterMarkOffset() int64 {
 	return c.MHighWaterMarkOffset
 }
 
 // Messages returns the messages channel.
-func (c *ConsumerGroupClaim) Messages() <-chan *sarama.ConsumerMessage {
+func (c *ConsumerGroupClaimGenerate) Messages() <-chan *sarama.ConsumerMessage {
 	return c.msgChan
 }
 
 // Run generates messages until the context is closed.
 // It can only be called once and will panic otherwise.
-func (c *ConsumerGroupClaim) Run(ctx context.Context) error {
+func (c *ConsumerGroupClaimGenerate) Run(ctx context.Context) error {
 	defer close(c.msgChan)
 	for {
 		msg := c.NextMessage()
@@ -114,4 +114,43 @@ func (c *ConsumerGroupClaim) Run(ctx context.Context) error {
 	}
 }
 
-var _ sarama.ConsumerGroupClaim = (*ConsumerGroupClaim)(nil)
+var _ sarama.ConsumerGroupClaim = (*ConsumerGroupClaimGenerate)(nil)
+
+// ConsumerGroupClaimChan is a fake sarama.ConsumerGroupClaim
+// that returns messages from an existing channel.
+type ConsumerGroupClaimChan struct {
+	MsgChan chan *sarama.ConsumerMessage
+
+	// Saved values.
+	MTopic               string
+	MPartition           int32
+	MInitialOffset       int64
+	MHighWaterMarkOffset int64
+}
+
+// Topic returns the saved value.
+func (c *ConsumerGroupClaimChan) Topic() string {
+	return c.MTopic
+}
+
+// Partition returns the saved value.
+func (c *ConsumerGroupClaimChan) Partition() int32 {
+	return c.MPartition
+}
+
+// InitialOffset returns the saved value.
+func (c *ConsumerGroupClaimChan) InitialOffset() int64 {
+	return c.MInitialOffset
+}
+
+// HighWaterMarkOffset returns the saved offset.
+func (c *ConsumerGroupClaimChan) HighWaterMarkOffset() int64 {
+	return c.MHighWaterMarkOffset
+}
+
+// Messages returns the messages channel.
+func (c *ConsumerGroupClaimChan) Messages() <-chan *sarama.ConsumerMessage {
+	return c.MsgChan
+}
+
+var _ sarama.ConsumerGroupClaim = (*ConsumerGroupClaimChan)(nil)

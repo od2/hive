@@ -6,6 +6,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
+	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 )
@@ -35,7 +36,7 @@ func (h *Handler) ReportDiscovered(
 			return nil, fmt.Errorf("proto marshal failed: %w", err)
 		}
 		msgs[i] = &sarama.ProducerMessage{
-			Topic: ptr.Dst.Collection + ".discovered",
+			Topic: topology.CollectionTopic(ptr.Dst.Collection, topology.TopicCollectionDiscovered),
 			Value: sarama.ByteEncoder(buf),
 		}
 	}

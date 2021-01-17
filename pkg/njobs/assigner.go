@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"go.od2.network/hive/pkg/topology"
+	"go.od2.network/hive/pkg/topology/redisshard"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
@@ -23,20 +25,52 @@ import (
 // then assigns them to as much Redis workers as possible.
 // The offset is stored in Redis (not Kafka), starting from the earliest message.
 type Assigner struct {
-	RedisClient *RedisClient
-	Log         *zap.Logger
+	RedisFactory redisshard.Factory
+	Producer     sarama.SyncProducer
+	Topology     *topology.Config
+	Log          *zap.Logger
 
 	Metrics *AssignerMetrics
 }
 
-// Run starts streaming messages from Kafka in batches.
+// Setup is called by sarama when the consumer group member starts.
+func (a *Assigner) Setup(_ sarama.ConsumerGroupSession) error {
+	return nil
+}
+
+// Cleanup is called by sarama after the consumer group member stops.
+func (a *Assigner) Cleanup(_ sarama.ConsumerGroupSession) error {
+	return nil
+}
+
+// ConsumeClaim starts streaming messages from Kafka in batches.
 // The algorithm throttles Kafka consumption to match the speed at which nqueue workers consume.
-func (a *Assigner) Run(msgs <-chan *sarama.ConsumerMessage) error {
+func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Connect to shard.
+	collectionName := claim.Topic()
+	collection := a.Topology.GetCollection(collectionName)
+	if collection == nil {
+		return fmt.Errorf("selected non-existent collection: %s", collectionName)
+	}
+	shard := topology.Shard{
+		Collection: collectionName,
+		Partition:  claim.Partition(),
+	}
+	redis, err := a.RedisFactory.GetShard(shard)
+	if err != nil {
+		return fmt.Errorf("failed to get Redis shard from factory: %w", err)
+	}
+	njobsRedis, err := NewRedisClient(redis, &shard, collection)
+	if err != nil {
+		return err
+	}
+
 	// Start watchdog background routine and listen for error.
 	watchdog := Watchdog{
-		RedisClient: a.RedisClient,
+		RedisClient: njobsRedis,
 	}
 	watchdogErrC := make(chan error, 1)
 	var wg sync.WaitGroup
@@ -46,18 +80,36 @@ func (a *Assigner) Run(msgs <-chan *sarama.ConsumerMessage) error {
 		defer close(watchdogErrC)
 		err := watchdog.Run(ctx)
 		if ctx.Err() == nil {
-			// Only if the context is still supposed to be alive,
-			// then we respect watchdog failures.
 			watchdogErrC <- err
 		}
 	}()
+
+	// Start forwarder background routine and listen for error.
+	forwarder := ResultForwarder{
+		RedisClient: njobsRedis,
+		Producer:    a.Producer,
+		Topic:       topology.CollectionTopic(collectionName, topology.TopicCollectionResults),
+		Log:         a.Log.Named("forwarder"),
+	}
+	forwarderErrC := make(chan error, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(forwarderErrC)
+		err := forwarder.Run(ctx)
+		if ctx.Err() == nil {
+			forwarderErrC <- err
+		}
+	}()
+
 	// Build Redis nqueue assigner state.
 	s := assignerState{
 		Assigner: a,
-		r:        a.RedisClient,
+		r:        njobsRedis,
+		session:  session,
 	}
 	// Start consumer loop.
-	ticker := time.NewTicker(a.RedisClient.AssignInterval)
+	ticker := time.NewTicker(njobsRedis.Collection.AssignInterval)
 	defer ticker.Stop()
 loop:
 	for {
@@ -66,16 +118,20 @@ loop:
 			if err != nil {
 				return fmt.Errorf("error from watchdog: %w", err)
 			}
+		case err := <-forwarderErrC:
+			if err != nil {
+				return fmt.Errorf("error from forwarder: %w", err)
+			}
 		case <-ticker.C:
 			if err := s.flush(ctx); err != nil {
 				return err
 			}
-		case msg, ok := <-msgs:
+		case msg, ok := <-claim.Messages():
 			if !ok {
 				break loop
 			}
 			s.window = append(s.window, msg)
-			if uint(len(s.window)) >= s.r.Options.AssignBatch {
+			if uint(len(s.window)) >= s.r.Collection.AssignBatch {
 				if err := s.flush(ctx); err != nil {
 					return err
 				}
@@ -91,8 +147,9 @@ loop:
 
 type assignerState struct {
 	*Assigner
-	r      *RedisClient
-	window []*sarama.ConsumerMessage // unacknowledged messages
+	r       *RedisClient
+	window  []*sarama.ConsumerMessage // unacknowledged messages
+	session sarama.ConsumerGroupSession
 }
 
 // flush loops doing flush attempts until all messages are assigned.
@@ -112,7 +169,7 @@ func (s *assignerState) flush(ctx context.Context) error {
 }
 
 func (s *assignerState) backOff(ctx context.Context) error {
-	timer := time.NewTimer(s.RedisClient.Options.AssignInterval)
+	timer := time.NewTimer(s.r.Collection.AssignInterval)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
@@ -153,6 +210,9 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 			zap.Int64("assigner.offset", lastOffset),
 			zap.Int64("assigner.count", count),
 			zap.Bool("assigner.ok", ok))
+	}
+	if len(s.window) > 0 {
+		s.session.MarkMessage(s.window[len(s.window)-1], "")
 	}
 	// Move messages from window to channel.
 	for len(s.window) > 0 && s.window[0].Offset <= lastOffset {

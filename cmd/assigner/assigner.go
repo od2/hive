@@ -2,14 +2,13 @@ package assigner
 
 import (
 	"context"
-	"errors"
-	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/go-redis/redis/v8"
 	"github.com/spf13/cobra"
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/pkg/njobs"
+	"go.od2.network/hive/pkg/topology"
+	"go.od2.network/hive/pkg/topology/redisshard"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -23,114 +22,22 @@ var Cmd = cobra.Command{
 		"Running multiple assigners is allowed during surge upgrades.",
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
-		app := providers.NewApp(
-			cmd,
-			fx.Provide(
-				fx.Annotated{
-					Name:   "assigner_consumer",
-					Target: newAssignerConsumer,
-				},
-				fx.Annotated{
-					Name:   "assigner_partition_consumer",
-					Target: newAssignerPartitionConsumer,
-				},
-				fx.Annotated{
-					Name:   "forwarder_producer",
-					Target: newForwarderProducer,
-				},
-			),
-			fx.Invoke(runAssigner, runForwarder),
-		)
+		app := providers.NewApp(cmd, fx.Invoke(runAssigner))
 		app.Run()
 	},
-}
-
-func newAssignerConsumer(
-	log *zap.Logger,
-	saramaClient sarama.Client,
-	lc fx.Lifecycle,
-) (sarama.Consumer, error) {
-	log.Info("Creating Kafka consumer")
-	consumer, err := sarama.NewConsumerFromClient(saramaClient)
-	if err != nil {
-		log.Fatal("Failed to build Kafka consumer", zap.Error(err))
-	}
-	lc.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			log.Info("Closing Kafka consumer")
-			return consumer.Close()
-		},
-	})
-	return consumer, nil
-}
-
-type assignerConsumerIn struct {
-	fx.In
-
-	Lifecycle   fx.Lifecycle
-	Partition   *providers.NJobsPartition
-	RedisClient *njobs.RedisClient
-	Consumer    sarama.Consumer `name:"assigner_consumer"`
-	Meter       metric.Meter
-}
-
-func newAssignerPartitionConsumer(log *zap.Logger, inputs assignerConsumerIn) (sarama.PartitionConsumer, error) {
-	// Start up Kafka consumer.
-	log.Info("Starting Kafka partition consumer")
-	// Read consumer offset.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	offset, err := inputs.RedisClient.GetOffset(ctx)
-	if errors.Is(err, redis.Nil) {
-		offset = sarama.OffsetOldest
-	} else if err != nil {
-		return nil, err
-	}
-	partitionConsumer, err := inputs.Consumer.ConsumePartition(
-		inputs.Partition.Topic, inputs.Partition.Partition, offset)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := inputs.Meter.NewInt64UpDownSumObserver("assigner_high_water_mark_offset",
-		func(ctx context.Context, res metric.Int64ObserverResult) {
-			res.Observe(partitionConsumer.HighWaterMarkOffset())
-		}); err != nil {
-		return nil, err
-	}
-	inputs.Lifecycle.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			return partitionConsumer.Close()
-		},
-	})
-	return partitionConsumer, nil
-}
-
-func newForwarderProducer(
-	log *zap.Logger,
-	saramaClient sarama.Client,
-	lc fx.Lifecycle,
-) (sarama.SyncProducer, error) {
-	producer, err := sarama.NewSyncProducerFromClient(saramaClient)
-	if err != nil {
-		return nil, err
-	}
-	lc.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			log.Info("Closing Kafka producer")
-			return producer.Close()
-		},
-	})
-	return producer, nil
 }
 
 type assignerIn struct {
 	fx.In
 
-	Lifecycle   fx.Lifecycle
-	Shutdown    fx.Shutdowner
-	RedisClient *njobs.RedisClient
-	Consumer    sarama.PartitionConsumer `name:"assigner_partition_consumer"`
-	Meter       metric.Meter
+	Ctx           context.Context
+	Lifecycle     fx.Lifecycle
+	Shutdown      fx.Shutdowner
+	Topology      *topology.Config
+	RedisFactory  redisshard.Factory
+	ConsumerGroup sarama.ConsumerGroup
+	Producer      sarama.SyncProducer
+	Meter         metric.Meter
 }
 
 func runAssigner(log *zap.Logger, inputs assignerIn) {
@@ -140,55 +47,28 @@ func runAssigner(log *zap.Logger, inputs assignerIn) {
 		log.Fatal("Failed to create metrics", zap.Error(err))
 	}
 	assigner := njobs.Assigner{
-		RedisClient: inputs.RedisClient,
-		Log:         log,
-		Metrics:     metrics,
+		RedisFactory: inputs.RedisFactory,
+		Producer:     inputs.Producer,
+		Topology:     inputs.Topology,
+		Log:          log,
+		Metrics:      metrics,
+	}
+	run := func() {
+		// Create list of topics.
+		topics := make([]string, len(inputs.Topology.Collections))
+		for i, coll := range inputs.Topology.Collections {
+			topics[i] = topology.CollectionTopic(coll.Name, topology.TopicCollectionTasks)
+		}
+		if err := inputs.ConsumerGroup.Consume(inputs.Ctx, topics, &assigner); err != nil {
+			log.Error("Assigner failed", zap.Error(err))
+			if err := inputs.Shutdown.Shutdown(); err != nil {
+				log.Fatal("Failed to shut down", zap.Error(err))
+			}
+		}
 	}
 	inputs.Lifecycle.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
-			go func() {
-				log.Info("Starting assigner")
-				if err := assigner.Run(inputs.Consumer.Messages()); err != nil {
-					log.Error("Assigner failed", zap.Error(err))
-					if err := inputs.Shutdown.Shutdown(); err != nil {
-						log.Fatal("Failed to shut down", zap.Error(err))
-					}
-				}
-			}()
-			return nil
-		},
-	})
-}
-
-type forwarderIn struct {
-	fx.In
-
-	Lifecycle   fx.Lifecycle
-	Shutdown    fx.Shutdowner
-	Partition   *providers.NJobsPartition
-	RedisClient *njobs.RedisClient
-	Producer    sarama.SyncProducer `name:"forwarder_producer"`
-}
-
-func runForwarder(ctx context.Context, log *zap.Logger, inputs forwarderIn) {
-	// Spin up forwarder.
-	forwarder := njobs.ResultForwarder{
-		RedisClient: inputs.RedisClient,
-		Producer:    inputs.Producer,
-		Topic:       inputs.Partition.Topic + ".results",
-		Log:         log,
-	}
-	inputs.Lifecycle.Append(fx.Hook{
-		OnStart: func(_ context.Context) error {
-			go func() {
-				log.Info("Starting forwarder")
-				if err := forwarder.Run(ctx); err != nil {
-					log.Error("ResultForwarder failed", zap.Error(err))
-				}
-				if err := inputs.Shutdown.Shutdown(); err != nil {
-					log.Fatal("Failed to shut down", zap.Error(err))
-				}
-			}()
+			go run()
 			return nil
 		},
 	})

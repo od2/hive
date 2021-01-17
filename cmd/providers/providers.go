@@ -4,6 +4,9 @@ import (
 	"context"
 
 	"github.com/spf13/cobra"
+	"go.od2.network/hive/pkg/njobs"
+	"go.od2.network/hive/pkg/topology"
+	"go.od2.network/hive/pkg/topology/redisshard"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -22,16 +25,19 @@ var Providers = []interface{}{
 	// mysql.go
 	NewMySQL,
 	// njobs.go
-	NewNJobsOptions,
-	NewNJobsPartition,
-	NewNJobsRedis,
+	njobs.NewRedisClient,
 	// providers.go
 	NewContext,
-	// redis.go
-	NewRedis,
 	// sarama.go
 	NewSaramaConfig,
 	NewSaramaClient,
+	GetSaramaConsumerGroup,
+	NewSaramaSyncProducer,
+	// topology.go
+	NewTopologyConfig,
+	NewItemsFactory,
+	func(t *topology.Config) *topology.RedisShardFactory { return t.RedisShardFactory },
+	redisshard.NewFactory,
 }
 
 func NewApp(cmd *cobra.Command, opts ...fx.Option) *fx.App {

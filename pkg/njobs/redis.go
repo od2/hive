@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
+	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -83,10 +85,24 @@ type RedisClient struct {
 	// Modules
 	Redis *redis.Client
 	// Settings
-	*Options
+	*topology.Collection
 	PartitionKeys PartitionKeys
 	// Redis scripts
 	*Scripts
+}
+
+func NewRedisClient(
+	rd *redis.Client,
+	shard *topology.Shard,
+	opts *topology.Collection,
+) (*RedisClient, error) {
+	// Connect to Redis njobs.
+	return &RedisClient{
+		Redis:         rd,
+		PartitionKeys: NewPartitionKeys(shard.Collection, shard.Partition),
+		Scripts:       GetScripts(),
+		Collection:    opts,
+	}, nil
 }
 
 // Scripts holds Redis Lua server-side scripts.
@@ -103,20 +119,24 @@ type Scripts struct {
 	commitRead        *redis.Script
 }
 
-// NewScripts prepares the Lua server-side scripts.
-func NewScripts() *Scripts {
-	s := new(Scripts)
-	// Task control
-	s.assignTasks = redis.NewScript(assignTasksScript)
-	s.expireTasks = redis.NewScript(expireTasksScript)
-	s.ack = redis.NewScript(ackScript)
-	// Session control
-	s.startSession = redis.NewScript(startSessionScript)
-	s.stopSession = redis.NewScript(stopSessionScript)
-	s.addSessionQuota = redis.NewScript(addSessionQuotaScript)
-	s.resetSessionQuota = redis.NewScript(resetSessionQuotaScript)
-	s.commitRead = redis.NewScript(commitReadScript)
-	return s
+var scriptsOnce sync.Once
+var scripts Scripts
+
+// GetScripts prepares the Lua server-side scripts.
+func GetScripts() *Scripts {
+	scriptsOnce.Do(func() {
+		// Task control
+		scripts.assignTasks = redis.NewScript(assignTasksScript)
+		scripts.expireTasks = redis.NewScript(expireTasksScript)
+		scripts.ack = redis.NewScript(ackScript)
+		// Session control
+		scripts.startSession = redis.NewScript(startSessionScript)
+		scripts.stopSession = redis.NewScript(stopSessionScript)
+		scripts.addSessionQuota = redis.NewScript(addSessionQuotaScript)
+		scripts.resetSessionQuota = redis.NewScript(resetSessionQuotaScript)
+		scripts.commitRead = redis.NewScript(commitReadScript)
+	})
+	return &scripts
 }
 
 // startSessionScript creates a new worker session.
@@ -164,7 +184,7 @@ func (r *RedisClient) EvalStartSession(ctx context.Context, worker int64, unixNo
 		r.PartitionKeys.SessionCount,
 		r.PartitionKeys.SessionExpires,
 	}
-	sessionExp := unixNow + int64(r.Options.SessionTimeout.Seconds())
+	sessionExp := unixNow + int64(r.Collection.SessionTimeout.Seconds())
 	return r.startSession.Run(ctx, r.Redis, keys, worker, sessionExp, r.PartitionKeys.WorkerQueuePrefix).Int64()
 }
 
@@ -763,7 +783,6 @@ type Session struct {
 	Worker         int64
 	Session        int64
 	nextExpire     int64
-	Collection     string
 	KafkaPartition int32
 }
 
@@ -795,7 +814,7 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 		Group:    "main",
 		Consumer: strconv.FormatInt(s.Session, 10),
 		Streams:  []string{s.PartitionKeys.WorkerQueue(s.Worker), ">"},
-		Count:    int64(s.Options.DeliverBatch),
+		Count:    int64(s.Collection.DeliverBatch),
 		Block:    250 * time.Millisecond,
 		NoAck:    false,
 	}).Result()
@@ -835,7 +854,7 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 		}
 		assignments[i] = &types.Assignment{
 			Locator: &types.ItemLocator{
-				Collection: s.Collection,
+				Collection: s.Collection.Name,
 				Id:         itemID,
 			},
 			KafkaPointer: &types.KafkaPointer{
@@ -847,7 +866,7 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 	// Commit read.
 	unixTime := time.Now().Unix()
 	if len(assignments) > 0 {
-		sessionExpTime := unixTime + int64(s.Options.SessionTimeout.Seconds())
+		sessionExpTime := unixTime + int64(s.Collection.SessionTimeout.Seconds())
 		if err := s.EvalCommitRead(ctx, s.Worker, s.Session, int64(len(assignments)), sessionExpTime); err != nil {
 			return nil, fmt.Errorf("failed to commit read: %w", err)
 		}
@@ -855,7 +874,7 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 	// Check for expirations.
 	if s.nextExpire <= unixTime {
 		var expErr error
-		s.nextExpire, expErr = s.evalExpire(ctx, s.Worker, s.Options.TaskExpireBatch)
+		s.nextExpire, expErr = s.evalExpire(ctx, s.Worker, s.Collection.TaskExpireBatch)
 		if expErr != nil {
 			return nil, fmt.Errorf("failed to expire tasks: %w", expErr)
 		}

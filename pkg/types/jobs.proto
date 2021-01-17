@@ -38,19 +38,23 @@ service Assignments {
   rpc ReportAssignments(ReportAssignmentsRequest) returns (ReportAssignmentsResponse);
 }
 
-message OpenAssignmentsStreamRequest {}
+message OpenAssignmentsStreamRequest {
+  string collection = 1;
+}
 message OpenAssignmentsStreamResponse {
   int64 stream_id = 1;
 }
 
 message CloseAssignmentsStreamRequest {
   int64 stream_id = 1;
+  string collection = 2;
 }
 message CloseAssignmentsStreamResponse {}
 
 message WantAssignmentsRequest {
   int64 stream_id = 1;
   int32 add_watermark = 2; // Request N additional tasks
+  string collection = 3;
 }
 message WantAssignmentsResponse {
   int32 added_watermark = 1; // N additional tasks granted
@@ -59,6 +63,7 @@ message WantAssignmentsResponse {
 
 message SurrenderAssignmentsRequest {
   int64 stream_id = 1;
+  string collection = 2;
 }
 message SurrenderAssignmentsResponse {
   int32 removed_watermark = 1;
@@ -66,10 +71,12 @@ message SurrenderAssignmentsResponse {
 
 message StreamAssignmentsRequest {
   int64 stream_id = 1;
+  string collection = 2;
 }
 
 message GetPendingAssignmentsCountRequest {
   int64 stream_id = 1;
+  string collection = 2;
 }
 
 message PendingAssignmentsCount {
@@ -93,6 +100,7 @@ message Assignment {
 
 message ReportAssignmentsRequest {
   repeated AssignmentReport reports = 1;
+  string collection = 2;
 }
 
 message AssignmentReport {

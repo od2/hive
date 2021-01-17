@@ -10,13 +10,14 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 )
 
 // ResultForwarder reads task results from Redis Streams and publishes them to Kafka.
 //
-// TODO It's not safe to run concurrently (yet).
+// It is not safe to run concurrently (will cause duplicate produced messages).
 type ResultForwarder struct {
 	RedisClient *RedisClient
 	Producer    sarama.SyncProducer
@@ -86,7 +87,7 @@ func (r *ResultForwarder) step(ctx context.Context) error {
 			WorkerId:   workerID,
 			FinishTime: ptypes.TimestampNow(),
 			Locator: &types.ItemLocator{
-				Collection: "", // TODO
+				Collection: topology.CollectionOfTopic(r.Topic),
 				Id:         item,
 			},
 		}

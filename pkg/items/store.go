@@ -42,14 +42,6 @@ type itemStoreRow struct {
 // InsertDiscovered inserts newly found items into the items table.
 // If the items already exist, nothing is done.
 func (i *Store) InsertDiscovered(ctx context.Context, pointers []*types.ItemPointer) error {
-	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelReadCommitted,
-		ReadOnly:  false,
-	})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	// language=MariaDB
 	const stmt = `INSERT IGNORE INTO %s (item_id, found_t)
 VALUES (:item_id, :found_t);`
@@ -64,10 +56,8 @@ VALUES (:item_id, :found_t);`
 			FoundT: t,
 		}
 	}
-	if _, err = i.DB.NamedExecContext(ctx, fmt.Sprintf(stmt, i.TableName), inserts); err != nil {
-		return err
-	}
-	return tx.Commit()
+	_, err := i.DB.NamedExecContext(ctx, fmt.Sprintf(stmt, i.TableName), inserts)
+	return err
 }
 
 // FilterNewPointers filters a batch of pointers, removing items that were already seen.
@@ -76,21 +66,13 @@ func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]stri
 	for _, id := range itemIDs {
 		itemIDMap[id] = true
 	}
-	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelReadCommitted,
-		ReadOnly:  true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
 	const stmt = `SELECT item_id FROM %s WHERE item_id IN (?);`
 	query, args, err := sqlx.In(fmt.Sprintf(stmt, i.TableName), itemIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile WHERE IN query: %w", err)
 	}
-	query = tx.Rebind(query)
-	known, err := tx.QueryContext(ctx, query, args...)
+	query = i.DB.Rebind(query)
+	known, err := i.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -113,14 +95,6 @@ func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]stri
 
 // PushAssignmentResults updates items with task results.
 func (i *Store) PushAssignmentResults(ctx context.Context, results []*types.AssignmentResult) error {
-	tx, err := i.DB.BeginTxx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelReadCommitted,
-		ReadOnly:  false,
-	})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	// language=MariaDB
 	const stmt = `INSERT INTO %s (item_id, found_t, last_update, updates)
 VALUES (:item_id, :found_t, :last_update, :updates)
@@ -138,8 +112,6 @@ ON DUPLICATE KEY UPDATE last_update = VALUES(last_update), updates = updates + 1
 			Updates:    1, // the initial value, otherwise it's added in the update
 		}
 	}
-	if _, err = tx.NamedExecContext(ctx, fmt.Sprintf(stmt, i.TableName), inserts); err != nil {
-		return err
-	}
-	return tx.Commit()
+	_, err := i.DB.NamedExecContext(ctx, fmt.Sprintf(stmt, i.TableName), inserts)
+	return err
 }
