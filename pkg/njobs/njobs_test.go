@@ -36,13 +36,11 @@ func TestNJobs(t *testing.T) {
 	const unixTime1 = int64(1)
 
 	// Build njobs Redis client.
-	scripts, err := LoadScripts(ctx, rd.Client)
-	require.NoError(t, err)
 	rc := RedisClient{
 		Redis:         rd.Client,
 		Options:       new(Options),
 		PartitionKeys: NewPartitionKeys(topic, partition),
-		Scripts:       scripts,
+		Scripts:       NewScripts(),
 	}
 	*rc.Options = DefaultOptions
 	rc.Options.TaskAssignments = 1
@@ -247,6 +245,7 @@ func TestNJobs(t *testing.T) {
 			"worker": "1",
 		}},
 	}, results3)
+	cancel()
 }
 
 type serverStream struct {

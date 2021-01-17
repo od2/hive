@@ -1,7 +1,6 @@
 package providers
 
 import (
-	"context"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -87,20 +86,15 @@ func NewNJobsPartition(log *zap.Logger) *NJobsPartition {
 }
 
 func NewNJobsRedis(
-	ctx context.Context,
 	params *NJobsPartition,
 	rd *redis.Client,
 	opts *njobs.Options,
 ) (*njobs.RedisClient, error) {
-	scripts, err := njobs.LoadScripts(ctx, rd)
-	if err != nil {
-		return nil, err
-	}
 	// Connect to Redis njobs.
 	return &njobs.RedisClient{
 		Redis:         rd,
 		PartitionKeys: njobs.NewPartitionKeys(params.Topic, params.Partition),
-		Scripts:       scripts,
+		Scripts:       njobs.NewScripts(),
 		Options:       opts,
 	}, nil
 }

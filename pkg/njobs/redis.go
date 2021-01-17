@@ -103,44 +103,20 @@ type Scripts struct {
 	commitRead        *redis.Script
 }
 
-// LoadScripts hashes the Lua server-side scripts and pre-loads them into Redis.
-func LoadScripts(ctx context.Context, r *redis.Client) (*Scripts, error) {
+// NewScripts prepares the Lua server-side scripts.
+func NewScripts() *Scripts {
 	s := new(Scripts)
 	// Task control
 	s.assignTasks = redis.NewScript(assignTasksScript)
-	if err := s.assignTasks.Load(ctx, r).Err(); err != nil {
-		return nil, err
-	}
 	s.expireTasks = redis.NewScript(expireTasksScript)
-	if err := s.expireTasks.Load(ctx, r).Err(); err != nil {
-		return nil, err
-	}
 	s.ack = redis.NewScript(ackScript)
-	if err := s.ack.Load(ctx, r).Err(); err != nil {
-		return nil, err
-	}
 	// Session control
 	s.startSession = redis.NewScript(startSessionScript)
-	if err := s.startSession.Load(ctx, r).Err(); err != nil {
-		return nil, err
-	}
 	s.stopSession = redis.NewScript(stopSessionScript)
-	if err := s.stopSession.Load(ctx, r).Err(); err != nil {
-		return nil, err
-	}
 	s.addSessionQuota = redis.NewScript(addSessionQuotaScript)
-	if err := s.addSessionQuota.Load(ctx, r).Err(); err != nil {
-		return nil, err
-	}
 	s.resetSessionQuota = redis.NewScript(resetSessionQuotaScript)
-	if err := s.resetSessionQuota.Load(ctx, r).Err(); err != nil {
-		return nil, err
-	}
 	s.commitRead = redis.NewScript(commitReadScript)
-	if err := s.commitRead.Load(ctx, r).Err(); err != nil {
-		return nil, err
-	}
-	return s, nil
+	return s
 }
 
 // startSessionScript creates a new worker session.

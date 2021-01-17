@@ -23,7 +23,6 @@ type Redis struct {
 	Client *redis.Client
 
 	tempDir string
-	cancel  context.CancelFunc
 	wg      *sync.WaitGroup
 }
 
@@ -35,7 +34,6 @@ func NewRedis(ctx context.Context, t testing.TB) *Redis {
 	}
 	socket := filepath.Join(dir, "redis.sock")
 
-	ctx, cancel := context.WithCancel(ctx)
 	redisCmd := exec.CommandContext(ctx, "redis-server",
 		"--port", "0",
 		"--unixsocket", socket,
@@ -91,7 +89,6 @@ func NewRedis(ctx context.Context, t testing.TB) *Redis {
 			Client: client,
 
 			tempDir: dir,
-			cancel:  cancel,
 			wg:      wg,
 		}
 	}
@@ -102,7 +99,6 @@ func NewRedis(ctx context.Context, t testing.TB) *Redis {
 
 // Close shuts down the server and client and prints the log.
 func (r *Redis) Close() {
-	r.cancel()
 	os.RemoveAll(r.tempDir)
 	r.wg.Wait()
 }

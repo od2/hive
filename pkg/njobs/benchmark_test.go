@@ -199,13 +199,11 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	const topic, partition = "test", int32(2)
 
 	// Build njobs Redis client.
-	scripts, err := LoadScripts(ctx, redis.Client)
-	require.NoError(t, err)
 	rc := &RedisClient{
 		Redis:         redis.Client,
 		Options:       &opts.Options,
 		PartitionKeys: NewPartitionKeys(topic, partition),
-		Scripts:       scripts,
+		Scripts:       NewScripts(),
 	}
 	// Build assigner.
 	metrics, err := NewAssignerMetrics(metric.NoopMeterProvider{}.Meter(""))

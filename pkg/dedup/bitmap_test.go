@@ -82,4 +82,5 @@ func TestBitMap(t *testing.T) {
 		StringItem("3000"),
 		StringItem("1023"),
 	}))
+	cancel()
 }

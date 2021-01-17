@@ -8,8 +8,11 @@ import (
 )
 
 func TestNewRedis(t *testing.T) {
-	ctx := context.TODO()
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
 	rd := NewRedis(ctx, t)
 	defer rd.Close()
 	assert.NoError(t, rd.Client.Ping(ctx).Err())
+	t.Log("Ping success")
+	cancel()
 }
