@@ -69,7 +69,7 @@ func Run(log *zap.Logger, inputs discoveryIn) {
 	}
 	providers.RunWithContext(inputs.Lifecycle, func(ctx context.Context) {
 		defer inputs.Shutdown.Shutdown()
-		for {
+		for ctx.Err() == nil {
 			if err := consumerGroup.Consume(ctx, consumeTopics, worker); err != nil {
 				log.Error("Consumer group exited", zap.Error(err))
 				return

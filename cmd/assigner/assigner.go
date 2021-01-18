@@ -58,10 +58,12 @@ func Run(log *zap.Logger, inputs assignerIn) {
 		for i, coll := range inputs.Topology.Collections {
 			topics[i] = topology.CollectionTopic(coll.Name, topology.TopicCollectionTasks)
 		}
-		if err := consumerGroup.Consume(ctx, topics, &assigner); err != nil {
-			log.Error("Assigner failed", zap.Error(err))
-			if err := inputs.Shutdown.Shutdown(); err != nil {
-				log.Fatal("Failed to shut down", zap.Error(err))
+		for ctx.Err() == nil {
+			if err := consumerGroup.Consume(ctx, topics, &assigner); err != nil {
+				log.Error("Assigner failed", zap.Error(err))
+				if err := inputs.Shutdown.Shutdown(); err != nil {
+					log.Fatal("Failed to shut down", zap.Error(err))
+				}
 			}
 		}
 	})
