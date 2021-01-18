@@ -1,3 +1,6 @@
+
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/723d71c138c24f45bdd390b7ff253a1d)](https://app.codacy.com/gh/od2/hive?utm_source=github.com&utm_medium=referral&utm_content=od2/hive&utm_campaign=Badge_Grade)
+
 <div align="center">
   <h1>od2 Hive</h1>
   <p>
