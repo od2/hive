@@ -187,7 +187,7 @@ func (s *session) fill() error {
 		// Request more assignments.
 		s.Log.Debug("Want more assignments", zap.Int32("add_watermark", delta))
 		if err := backoff.RetryNotify(func() error {
-			if err := s.fillOnce(delta); errors.Is(err, context.Canceled) {
+			if err := s.fillOnce(delta); status.Code(err) == codes.Canceled {
 				return backoff.Permanent(err)
 			} else if err != nil {
 				return err

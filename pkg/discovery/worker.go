@@ -53,11 +53,12 @@ func (w *Worker) ConsumeClaim(
 	// TODO Support other types of dedup
 	deduper := dedup.SQL{Store: itemsStore}
 	sess := session{
-		Worker:  w,
-		session: saramaSession,
-		claim:   claim,
-		items:   itemsStore,
-		deduper: &deduper,
+		Worker:     w,
+		collection: collectionName,
+		session:    saramaSession,
+		claim:      claim,
+		items:      itemsStore,
+		deduper:    &deduper,
 	}
 	// Loop over messages.
 	for {
