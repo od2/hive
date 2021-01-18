@@ -20,6 +20,6 @@ require (
 	go.uber.org/fx v1.13.1
 	go.uber.org/zap v1.10.0
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
-	google.golang.org/grpc v1.34.0
+	google.golang.org/grpc v1.35.0
 	google.golang.org/protobuf v1.25.0
 )
