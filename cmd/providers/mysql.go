@@ -21,7 +21,7 @@ func init() {
 }
 
 // NewMySQL connects an SQL client to the MySQL DSN from config.
-func NewMySQL(ctx context.Context, log *zap.Logger, lc fx.Lifecycle) (*sqlx.DB, error) {
+func NewMySQL(log *zap.Logger, lc fx.Lifecycle) (*sqlx.DB, error) {
 	// Force Go-compatible time handling.
 	cfg, err := mysql.ParseDSN(viper.GetString(ConfMySQLDSN))
 	if err != nil {
@@ -39,6 +39,8 @@ func NewMySQL(ctx context.Context, log *zap.Logger, lc fx.Lifecycle) (*sqlx.DB, 
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if err := db.PingContext(ctx); err != nil {
 		return nil, err
 	}

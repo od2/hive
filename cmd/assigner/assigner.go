@@ -30,7 +30,6 @@ var Cmd = cobra.Command{
 type assignerIn struct {
 	fx.In
 
-	Ctx          context.Context
 	Lifecycle    fx.Lifecycle
 	Shutdown     fx.Shutdowner
 	Topology     *topology.Config
@@ -53,23 +52,17 @@ func Run(log *zap.Logger, inputs assignerIn) {
 	if err != nil {
 		log.Fatal("Failed to get consumer group", zap.Error(err))
 	}
-	run := func() {
+	providers.RunWithContext(inputs.Lifecycle, func(ctx context.Context) {
 		// Create list of topics.
 		topics := make([]string, len(inputs.Topology.Collections))
 		for i, coll := range inputs.Topology.Collections {
 			topics[i] = topology.CollectionTopic(coll.Name, topology.TopicCollectionTasks)
 		}
-		if err := consumerGroup.Consume(inputs.Ctx, topics, &assigner); err != nil {
+		if err := consumerGroup.Consume(ctx, topics, &assigner); err != nil {
 			log.Error("Assigner failed", zap.Error(err))
 			if err := inputs.Shutdown.Shutdown(); err != nil {
 				log.Fatal("Failed to shut down", zap.Error(err))
 			}
 		}
-	}
-	inputs.Lifecycle.Append(fx.Hook{
-		OnStart: func(_ context.Context) error {
-			go run()
-			return nil
-		},
 	})
 }

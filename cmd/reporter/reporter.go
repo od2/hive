@@ -2,7 +2,6 @@ package reporter
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -61,37 +60,17 @@ func Run(log *zap.Logger, inputs reporterIn) {
 		Factory:   inputs.Factory,
 		Log:       log,
 	}
-	innerCtx, cancel := context.WithCancel(context.Background())
 	consumerGroup, err := providers.GetSaramaConsumerGroup(inputs.Lifecycle, log, inputs.Sarama, "hive.reporter")
 	if err != nil {
 		log.Fatal("Failed to get consumer group", zap.Error(err))
 	}
-	run := func() {
+	providers.RunWithContext(inputs.Lifecycle, func(ctx context.Context) {
 		defer inputs.Shutdown.Shutdown()
 		for {
-			if err := consumerGroup.Consume(innerCtx, topics, worker); err != nil {
+			if err := consumerGroup.Consume(ctx, topics, worker); err != nil {
 				log.Error("Consumer group exited", zap.Error(err))
 				return
 			}
 		}
-	}
-	// TODO Below is duplicated code. (discovery.go)
-	var wg sync.WaitGroup
-	inputs.Lifecycle.Append(fx.Hook{
-		OnStart: func(_ context.Context) error {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				run()
-			}()
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			cancel()
-			return nil
-		},
 	})
-	log.Info("Waiting for consumer group to exit")
-	wg.Wait()
-	log.Info("Finished")
 }

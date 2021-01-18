@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"go.od2.network/hive/pkg/njobs"
@@ -27,8 +28,6 @@ var Providers = []interface{}{
 	// njobs.go
 	njobs.NewRedisClient,
 	njobs.NewAssignerMetrics,
-	// providers.go
-	NewContext,
 	// sarama.go
 	NewSaramaConfig,
 	NewSaramaClient,
@@ -76,13 +75,25 @@ func NewCmd(invoke interface{}) func(cmd *cobra.Command, args []string) {
 	}
 }
 
-func NewContext(lc fx.Lifecycle) context.Context {
+// RunWithContext runs the provided closure in a goroutine when the app starts.
+// The passed context closes when the fx app stops.
+// The lifecycle stop hook waits indefinitely for the closure to finish.
+func RunWithContext(lc fx.Lifecycle, run func(ctx context.Context)) {
+	wg := new(sync.WaitGroup)
 	ctx, cancel := context.WithCancel(context.Background())
 	lc.Append(fx.Hook{
-		OnStop: func(_ context.Context) error {
+		OnStart: func(_ context.Context) error {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				run(ctx)
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
 			cancel()
+			wg.Wait()
 			return nil
 		},
 	})
-	return ctx
 }
