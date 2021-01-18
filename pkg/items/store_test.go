@@ -10,12 +10,18 @@ import (
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.od2.network/hive/pkg/mariadbtest"
 	"go.od2.network/hive/pkg/types"
 )
 
 func TestItemStore(t *testing.T) {
-	db := connect(t)
-	defer db.Close()
+	db := predefinedDB
+	if db == nil {
+		t.Log("No pre-defined DB, using Docker")
+		docker := mariadbtest.NewDocker(t)
+		defer docker.Close(t)
+		db = docker.DB
+	}
 	itemStore := &Store{
 		DB:        db,
 		TableName: "item_store_1",
@@ -26,11 +32,6 @@ func TestItemStore(t *testing.T) {
 	// Create table
 	require.NoError(t, itemStore.CreateTable(ctx))
 	t.Log("Created table", itemStore.TableName)
-	defer func() {
-		_, err := db.ExecContext(ctx, "DROP TABLE "+itemStore.TableName)
-		require.NoError(t, err)
-		t.Log("Dropped table", itemStore.TableName)
-	}()
 	// Insert items the first time
 	require.NoError(t, itemStore.InsertDiscovered(ctx, []*types.ItemPointer{
 		{
