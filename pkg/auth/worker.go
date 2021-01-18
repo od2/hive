@@ -74,7 +74,6 @@ func (w *WorkerAuthInterceptor) intercept(ctx context.Context) (context.Context,
 		w.Log.Debug("Rejecting explicitly invalid auth token")
 		return ctx, status.Error(codes.Unauthenticated, "invalid auth token")
 	}
-	w.Log.Debug("Accepted auth token")
 	authCtx := &WorkerContext{WorkerID: tokenInfo.WorkerID}
 	return WithWorkerContext(ctx, authCtx), nil
 }

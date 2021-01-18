@@ -181,7 +181,6 @@ func (s *assignerState) backOff(ctx context.Context) error {
 
 func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 	if len(s.window) <= 0 {
-		s.Log.Debug("Empty batch")
 		return true, nil
 	}
 	lastOffset, count, assignErr := s.r.evalAssignTasks(ctx, s.window)
