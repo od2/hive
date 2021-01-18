@@ -36,7 +36,7 @@ func NewStandaloneFactory(c *topology.RedisShardFactoryStandalone) *StandaloneFa
 	} else {
 		f.Redis = redis.NewClient(&c.Redis)
 	}
-	return &StandaloneFactory{c.Client}
+	return f
 }
 
 // GetShard always returns the same Redis client.

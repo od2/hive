@@ -228,7 +228,6 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 			Redis:         rd,
 			Collection:    collection,
 			PartitionKeys: PartitionKeys{},
-			Scripts:       GetScripts(),
 		},
 		signer:      signer,
 		opts:        opts,

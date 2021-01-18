@@ -47,7 +47,7 @@ func TestNJobs(t *testing.T) {
 		Redis:         rd.Client,
 		Collection:    mockCollection1,
 		PartitionKeys: NewPartitionKeys(topic, partition),
-		Scripts:       GetScripts(),
+		scripts:       getScripts(),
 	}
 
 	// Build task streamer server.

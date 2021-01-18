@@ -88,7 +88,7 @@ type RedisClient struct {
 	*topology.Collection
 	PartitionKeys PartitionKeys
 	// Redis scripts
-	*Scripts
+	scripts *scripts
 }
 
 // NewRedisClient creates an NJobs Redis client for a given shard.
@@ -103,13 +103,12 @@ func NewRedisClient(
 	return &RedisClient{
 		Redis:         rd,
 		PartitionKeys: NewPartitionKeys(shard.Collection, shard.Partition),
-		Scripts:       GetScripts(),
+		scripts:       getScripts(),
 		Collection:    opts,
 	}, nil
 }
 
-// Scripts holds Redis Lua server-side scripts.
-type Scripts struct {
+type scripts struct {
 	// Task control
 	assignTasks *redis.Script
 	expireTasks *redis.Script
@@ -123,23 +122,24 @@ type Scripts struct {
 }
 
 var scriptsOnce sync.Once
-var scripts Scripts
+var scriptsSingleton scripts
 
-// GetScripts prepares the Lua server-side scripts.
-func GetScripts() *Scripts {
+func getScripts() *scripts {
 	scriptsOnce.Do(func() {
-		// Task control
-		scripts.assignTasks = redis.NewScript(assignTasksScript)
-		scripts.expireTasks = redis.NewScript(expireTasksScript)
-		scripts.ack = redis.NewScript(ackScript)
-		// Session control
-		scripts.startSession = redis.NewScript(startSessionScript)
-		scripts.stopSession = redis.NewScript(stopSessionScript)
-		scripts.addSessionQuota = redis.NewScript(addSessionQuotaScript)
-		scripts.resetSessionQuota = redis.NewScript(resetSessionQuotaScript)
-		scripts.commitRead = redis.NewScript(commitReadScript)
+		scriptsSingleton = scripts{
+			// Task control
+			assignTasks: redis.NewScript(assignTasksScript),
+			expireTasks: redis.NewScript(expireTasksScript),
+			ack:         redis.NewScript(ackScript),
+			// Session control
+			startSession:      redis.NewScript(startSessionScript),
+			stopSession:       redis.NewScript(stopSessionScript),
+			addSessionQuota:   redis.NewScript(addSessionQuotaScript),
+			resetSessionQuota: redis.NewScript(resetSessionQuotaScript),
+			commitRead:        redis.NewScript(commitReadScript),
+		}
 	})
-	return &scripts
+	return &scriptsSingleton
 }
 
 // startSessionScript creates a new worker session.
@@ -188,7 +188,7 @@ func (r *RedisClient) EvalStartSession(ctx context.Context, worker int64, unixNo
 		r.PartitionKeys.SessionExpires,
 	}
 	sessionExp := unixNow + int64(r.Collection.SessionTimeout.Seconds())
-	return r.startSession.Run(ctx, r.Redis, keys, worker, sessionExp, r.PartitionKeys.WorkerQueuePrefix).Int64()
+	return r.scripts.startSession.Run(ctx, r.Redis, keys, worker, sessionExp, r.PartitionKeys.WorkerQueuePrefix).Int64()
 }
 
 // stopSessionScript is a hybrid script that runs with two input modes, removing sessions.
@@ -307,7 +307,7 @@ func (r *RedisClient) EvalStopSession(ctx context.Context, worker int64, session
 		r.PartitionKeys.WorkerQuota,
 		r.PartitionKeys.Results,
 	}
-	err := r.stopSession.Run(ctx, r.Redis, keys,
+	err := r.scripts.stopSession.Run(ctx, r.Redis, keys,
 		0, r.PartitionKeys.WorkerQueuePrefix,
 		worker, session).Err()
 	if errors.Is(err, redis.Nil) {
@@ -332,7 +332,7 @@ func (r *RedisClient) evalSessionExpire(ctx context.Context, now int64, limit in
 		r.PartitionKeys.WorkerQuota,
 		r.PartitionKeys.Results,
 	}
-	nextExpiry, err := r.stopSession.Run(ctx, r.Redis, keys,
+	nextExpiry, err := r.scripts.stopSession.Run(ctx, r.Redis, keys,
 		1, r.PartitionKeys.WorkerQueuePrefix,
 		now, limit).Int64()
 	if err != nil {
@@ -398,7 +398,7 @@ func (r *RedisClient) AddSessionQuota(
 		r.PartitionKeys.WorkerOffsets,
 		r.PartitionKeys.ActiveWorkers,
 	}
-	res, err := r.addSessionQuota.Run(ctx, r.Redis, keys, worker, session, n).Int64()
+	res, err := r.scripts.addSessionQuota.Run(ctx, r.Redis, keys, worker, session, n).Int64()
 	if errors.Is(err, redis.Nil) {
 		return 0, ErrSessionNotFound
 	} else if err != nil {
@@ -437,7 +437,7 @@ func (r *RedisClient) ResetSessionQuota(
 		r.PartitionKeys.WorkerQuota,
 		r.PartitionKeys.SessionQuota,
 	}
-	res, err := r.resetSessionQuota.Run(ctx, r.Redis, keys, worker, session).Int64()
+	res, err := r.scripts.resetSessionQuota.Run(ctx, r.Redis, keys, worker, session).Int64()
 	if errors.Is(err, redis.Nil) {
 		return 0, ErrSessionNotFound
 	}
@@ -578,7 +578,7 @@ func (r *RedisClient) evalAssignTasks(ctx context.Context, batch []*sarama.Consu
 		argv[3+(i*2)+1] = msg.Key
 		offsetsMap[msg.Offset] = msg
 	}
-	cmd := r.assignTasks.Run(ctx, r.Redis, keys, argv...)
+	cmd := r.scripts.assignTasks.Run(ctx, r.Redis, keys, argv...)
 	err = cmd.Err()
 	if err != nil {
 		return
@@ -682,7 +682,7 @@ func (r *RedisClient) evalExpire(ctx context.Context, worker int64, batch uint) 
 		r.PartitionKeys.Results,
 	}
 	nowUnix := time.Now().Unix()
-	return r.expireTasks.Run(ctx, r.Redis, keys, nowUnix, worker, int64(batch)).Int64()
+	return r.scripts.expireTasks.Run(ctx, r.Redis, keys, nowUnix, worker, int64(batch)).Int64()
 }
 
 // ackScript removes acknowledged task assignments for a worker stream.
@@ -737,7 +737,7 @@ func (r *RedisClient) EvalAck(ctx context.Context, worker int64, results []*type
 		argv[1+(i*2)] = a.KafkaPointer.Offset
 		argv[1+(i*2)+1] = int64(a.Status.Number())
 	}
-	count, err := r.ack.Run(ctx, r.Redis, keys, argv...).Int64()
+	count, err := r.scripts.ack.Run(ctx, r.Redis, keys, argv...).Int64()
 	return uint(count), err
 }
 
@@ -767,7 +767,7 @@ func (r *RedisClient) EvalCommitRead(ctx context.Context, worker int64, session 
 		r.PartitionKeys.SessionExpires,
 		r.PartitionKeys.SessionQuota,
 	}
-	err := r.commitRead.Run(ctx, r.Redis, keys, worker, session, numMsgs, expTime).Err()
+	err := r.scripts.commitRead.Run(ctx, r.Redis, keys, worker, session, numMsgs, expTime).Err()
 	if errors.Is(err, redis.Nil) {
 		return nil
 	}
