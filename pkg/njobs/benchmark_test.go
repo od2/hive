@@ -176,6 +176,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	require.NoError(t, err)
 	collection := new(topology.Collection)
 	require.NoError(t, toml.Unmarshal([]byte(opts.Collection), collection), "Collection config")
+	require.NotEmpty(t, collection.Name, "Collection name")
 	topo := &topology.Config{
 		Collections: []*topology.Collection{collection},
 		RedisShardFactory: &topology.RedisShardFactory{
@@ -278,7 +279,7 @@ func runBenchmark(t *testing.T, opts *benchOptions) {
 		defer stack.innerCancel()
 		claim := &saramamock.ConsumerGroupClaimChan{
 			MsgChan: msgs,
-			MTopic:  "test",
+			MTopic:  "test.tasks",
 		}
 		session := &saramamock.ConsumerGroupSession{}
 		err := stack.assigner.ConsumeClaim(session, claim)
@@ -336,7 +337,6 @@ func (stack *benchStack) runClient(ctx context.Context, workerID int64) {
 		GracePeriod:   10 * time.Second,
 		FillRate:      1, // fill as fast as possible
 		StreamBackoff: new(backoff.StopBackOff),
-		APIBackoff:    new(backoff.StopBackOff),
 		ReportRate:    1 * time.Second,
 		ReportBatch:   128,
 	}

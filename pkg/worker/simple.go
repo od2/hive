@@ -15,9 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// TODO Catch panics in workers
 // TODO Limit overall worker failures
-// TODO Consider backoff for open/close
 
 // Simple is a works off items one-by-one from multiple routines.
 // It is resilient to network failures and auto-heals failed gRPC connections.
@@ -33,7 +31,6 @@ type Simple struct {
 	GracePeriod   time.Duration   // Duration given to shut down stream cleanly
 	FillRate      time.Duration   // Max rate to fill assignments
 	StreamBackoff backoff.BackOff // Stream connection error backoff
-	APIBackoff    backoff.BackOff // API call backoff
 	ReportRate    time.Duration   // Rate at which to report results
 	ReportBatch   uint            // Max batch size for a report
 }
@@ -186,17 +183,14 @@ func (s *session) fill() error {
 		}
 		// Request more assignments.
 		s.Log.Debug("Want more assignments", zap.Int32("add_watermark", delta))
-		if err := backoff.RetryNotify(func() error {
-			if err := s.fillOnce(delta); status.Code(err) == codes.Canceled {
-				return backoff.Permanent(err)
-			} else if err != nil {
-				return err
-			}
-			return nil
-		}, s.APIBackoff, func(err error, dur time.Duration) {
-			s.Log.Warn("Error requesting more assignments, retrying", zap.Error(err), zap.Duration("backoff", dur))
-		}); err != nil {
+		_, err = s.Assignments.WantAssignments(s.softCtx, &types.WantAssignmentsRequest{
+			StreamId:     s.sessionID,
+			AddWatermark: delta,
+			Collection:   s.Collection,
+		})
+		if err != nil {
 			s.Log.Error("Failed to request more assignments", zap.Error(err))
+			return err
 		}
 	}
 }
@@ -233,15 +227,11 @@ func (r *reporter) flush() {
 	if len(r.batch) <= 0 {
 		return
 	}
-	if err := backoff.RetryNotify(func() error {
-		_, err := r.Assignments.ReportAssignments(r.hardCtx, &types.ReportAssignmentsRequest{
-			Reports:    r.batch,
-			Collection: r.Collection,
-		})
-		return err
-	}, r.APIBackoff, func(err error, dur time.Duration) {
-		r.Log.Warn("Error reporting results, retrying", zap.Error(err), zap.Duration("backoff", dur))
-	}); err != nil {
+	_, err := r.Assignments.ReportAssignments(r.hardCtx, &types.ReportAssignmentsRequest{
+		Reports:    r.batch,
+		Collection: r.Collection,
+	})
+	if err != nil {
 		r.Log.Error("Failed to request more assignments", zap.Error(err))
 		r.softCancel()
 		return
@@ -249,16 +239,6 @@ func (r *reporter) flush() {
 	r.Log.Debug("Flushed results", zap.Int("result_count", len(r.batch)))
 	r.batch = nil
 	return
-}
-
-// fillOnce requests the server to push more assignments with a single gRPC call.
-func (s *session) fillOnce(delta int32) (err error) {
-	_, err = s.Assignments.WantAssignments(s.softCtx, &types.WantAssignmentsRequest{
-		StreamId:     s.sessionID,
-		AddWatermark: delta,
-		Collection:   s.Collection,
-	})
-	return err
 }
 
 // worker runs a single worker loop routine.
@@ -272,7 +252,7 @@ func (s *session) worker(reports chan<- *types.AssignmentReport, assigns <-chan 
 				return nil
 			}
 			// Hand off task to handler for processing.
-			status := s.Handler.WorkAssignment(s.hardCtx, assign)
+			taskStatus := s.Handler.WorkAssignment(s.hardCtx, assign)
 			// Update pipeline state.
 			atomic.StoreInt32(&s.needsFill, 1)
 			if atomic.AddInt32(&s.inflight, -1) < 0 {
@@ -280,7 +260,7 @@ func (s *session) worker(reports chan<- *types.AssignmentReport, assigns <-chan 
 			}
 			reports <- &types.AssignmentReport{
 				KafkaPointer: assign.GetKafkaPointer(),
-				Status:       status,
+				Status:       taskStatus,
 			}
 		}
 	}
@@ -290,24 +270,15 @@ func (s *session) worker(reports chan<- *types.AssignmentReport, assigns <-chan 
 // Until the soft context is cancelled, the returned value is just a hint.
 // Afterwards, return value is guaranteed to be equal or greater than the immediate/accurate value.
 func (s *session) numPending(ctx context.Context) (int32, error) {
-	var watermark int32
-	if err := backoff.RetryNotify(func() error {
-		pendingAssignCountRes, err := s.Assignments.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{
-			StreamId:   s.sessionID,
-			Collection: s.Collection,
-		})
-		if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
-			return backoff.Permanent(err)
-		} else if err != nil {
-			return err
-		}
-		watermark = pendingAssignCountRes.GetWatermark()
-		return nil
-	}, s.APIBackoff, func(err error, dur time.Duration) {
-		s.Log.Warn("Error getting pending assignments, retrying", zap.Error(err), zap.Duration("backoff", dur))
-	}); err != nil {
+	pendingAssignCountRes, err := s.Assignments.GetPendingAssignmentsCount(ctx, &types.GetPendingAssignmentsCountRequest{
+		StreamId:   s.sessionID,
+		Collection: s.Collection,
+	})
+	if err != nil {
 		s.Log.Error("Failed to get pending assignments", zap.Error(err))
+		// It's fine not to return here, we will just under-report the number of pending items.
 	}
+	watermark := pendingAssignCountRes.GetWatermark()
 	inflight := atomic.LoadInt32(&s.inflight)
 	s.Log.Debug("Pending count",
 		zap.Int32("pending", watermark),
