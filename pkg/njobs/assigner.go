@@ -50,7 +50,7 @@ func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 	defer cancel()
 
 	// Connect to shard.
-	collectionName := claim.Topic()
+	collectionName := topology.CollectionOfTopic(claim.Topic())
 	collection := a.Topology.GetCollection(collectionName)
 	if collection == nil {
 		return fmt.Errorf("selected non-existent collection: %s", collectionName)
