@@ -14,19 +14,16 @@ import (
 // Topology config keys.
 const (
 	ConfTopologyConfigFile = "topology.config_file"
-
-	ConfInstanceConsumerGroup = "instance.consumer_group"
 )
 
 func init() {
 	viper.SetDefault(ConfTopologyConfigFile, "")
-	viper.SetDefault(ConfInstanceConsumerGroup, "")
 }
 
 func NewTopologyConfig(log *zap.Logger) (*topology.Config, error) {
 	configFilePath := viper.GetString(ConfTopologyConfigFile)
 	if configFilePath == "" {
-		log.Fatal("Empty " + ConfTopologyConfigFile)
+		log.Fatal("Missing var " + ConfTopologyConfigFile)
 	}
 	log.Info("Reading topology config",
 		zap.String(ConfTopologyConfigFile, configFilePath))

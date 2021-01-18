@@ -32,7 +32,6 @@ var Providers = []interface{}{
 	// sarama.go
 	NewSaramaConfig,
 	NewSaramaClient,
-	GetSaramaConsumerGroup,
 	NewSaramaSyncProducer,
 	// topology.go
 	NewTopologyConfig,

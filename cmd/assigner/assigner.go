@@ -30,14 +30,14 @@ var Cmd = cobra.Command{
 type assignerIn struct {
 	fx.In
 
-	Ctx           context.Context
-	Lifecycle     fx.Lifecycle
-	Shutdown      fx.Shutdowner
-	Topology      *topology.Config
-	RedisFactory  redisshard.Factory
-	ConsumerGroup sarama.ConsumerGroup
-	Producer      sarama.SyncProducer
-	Metrics       *njobs.AssignerMetrics
+	Ctx          context.Context
+	Lifecycle    fx.Lifecycle
+	Shutdown     fx.Shutdowner
+	Topology     *topology.Config
+	RedisFactory redisshard.Factory
+	Sarama       sarama.Client
+	Producer     sarama.SyncProducer
+	Metrics      *njobs.AssignerMetrics
 }
 
 func Run(log *zap.Logger, inputs assignerIn) {
@@ -49,13 +49,17 @@ func Run(log *zap.Logger, inputs assignerIn) {
 		Log:          log,
 		Metrics:      inputs.Metrics,
 	}
+	consumerGroup, err := providers.GetSaramaConsumerGroup(inputs.Lifecycle, log, inputs.Sarama, "hive.assigner")
+	if err != nil {
+		log.Fatal("Failed to get consumer group", zap.Error(err))
+	}
 	run := func() {
 		// Create list of topics.
 		topics := make([]string, len(inputs.Topology.Collections))
 		for i, coll := range inputs.Topology.Collections {
 			topics[i] = topology.CollectionTopic(coll.Name, topology.TopicCollectionTasks)
 		}
-		if err := inputs.ConsumerGroup.Consume(inputs.Ctx, topics, &assigner); err != nil {
+		if err := consumerGroup.Consume(inputs.Ctx, topics, &assigner); err != nil {
 			log.Error("Assigner failed", zap.Error(err))
 			if err := inputs.Shutdown.Shutdown(); err != nil {
 				log.Fatal("Failed to shut down", zap.Error(err))

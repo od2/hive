@@ -26,7 +26,7 @@ func NewSaramaConfig(log *zap.Logger) (*sarama.Config, error) {
 	// Since sarama has so many options, it's easiest to read in a file.
 	configFilePath := viper.GetString(ConfSaramaConfigFile)
 	if configFilePath == "" {
-		log.Fatal("Empty " + ConfSaramaConfigFile)
+		log.Fatal("Missing var " + ConfSaramaConfigFile)
 	}
 	log.Info("Reading sarama config",
 		zap.String(ConfSaramaConfigFile, configFilePath))
@@ -67,8 +67,8 @@ func GetSaramaConsumerGroup(
 	lc fx.Lifecycle,
 	log *zap.Logger,
 	cl sarama.Client,
+	consumerGroupName string,
 ) (sarama.ConsumerGroup, error) {
-	consumerGroupName := viper.GetString(ConfInstanceConsumerGroup)
 	log.Info("Binding to Kafka consumer group",
 		zap.String("kafka.consumer_group", consumerGroupName))
 	consumerGroup, err := sarama.NewConsumerGroupFromClient(consumerGroupName, cl)

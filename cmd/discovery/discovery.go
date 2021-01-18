@@ -41,12 +41,12 @@ func init() {
 type discoveryIn struct {
 	fx.In
 
-	Lifecycle     fx.Lifecycle
-	Shutdown      fx.Shutdowner
-	Topology      *topology.Config
-	Factory       *items.Factory
-	Producer      sarama.SyncProducer
-	ConsumerGroup sarama.ConsumerGroup
+	Lifecycle fx.Lifecycle
+	Shutdown  fx.Shutdowner
+	Topology  *topology.Config
+	Factory   *items.Factory
+	Sarama    sarama.Client
+	Producer  sarama.SyncProducer
 }
 
 func Run(log *zap.Logger, inputs discoveryIn) {
@@ -65,10 +65,14 @@ func Run(log *zap.Logger, inputs discoveryIn) {
 		Log:      log,
 	}
 	innerCtx, cancel := context.WithCancel(context.Background())
+	consumerGroup, err := providers.GetSaramaConsumerGroup(inputs.Lifecycle, log, inputs.Sarama, "hive.discovery")
+	if err != nil {
+		log.Fatal("Failed to get consumer group", zap.Error(err))
+	}
 	run := func() {
 		defer inputs.Shutdown.Shutdown()
 		for {
-			if err := inputs.ConsumerGroup.Consume(innerCtx, consumeTopics, worker); err != nil {
+			if err := consumerGroup.Consume(innerCtx, consumeTopics, worker); err != nil {
 				log.Error("Consumer group exited", zap.Error(err))
 				return
 			}
