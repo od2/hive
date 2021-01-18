@@ -107,6 +107,7 @@ func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 		Assigner: a,
 		r:        njobsRedis,
 		session:  session,
+		claim:    claim,
 	}
 	// Start consumer loop.
 	ticker := time.NewTicker(njobsRedis.Collection.AssignInterval)
@@ -150,6 +151,7 @@ type assignerState struct {
 	r       *RedisClient
 	window  []*sarama.ConsumerMessage // unacknowledged messages
 	session sarama.ConsumerGroupSession
+	claim   sarama.ConsumerGroupClaim
 }
 
 // flush loops doing flush attempts until all messages are assigned.
@@ -187,8 +189,15 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 	if assignErr == ErrSeek {
 		// Redis is ahead of Kafka.
 		// This is weird, since we would expect Kafka to be more durable than Redis.
-		// TODO Theoretically we can recover by seeking forward and just skipping old messages.
-		return false, fmt.Errorf("consumer failed: Kafka behind Redis. recovery not implemented")
+		offset, err := s.r.GetOffset(ctx)
+		if err != nil {
+			return false, fmt.Errorf("failed to get offset during recovery: %w", err)
+		}
+		s.session.MarkOffset(s.claim.Topic(), s.claim.Partition(), offset+1, "")
+		s.session.Commit()
+		s.Log.Error("Kafka behind Redis, this should not normally happen, seeking forward",
+			zap.Int64("kafka.offset", offset+1))
+		return false, fmt.Errorf("consumer failed: Kafka behind Redis")
 	} else if assignErr == ErrNoWorkers {
 		// All workers are occupied or there are no workers at all.
 		// This can happen when:
