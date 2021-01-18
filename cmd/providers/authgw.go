@@ -1,11 +1,9 @@
 package providers
 
 import (
-	"context"
 	"encoding/hex"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/viper"
@@ -13,7 +11,6 @@ import (
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/cachegc"
 	"go.od2.network/hive/pkg/token"
-	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
 
@@ -34,13 +31,7 @@ func init() {
 	viper.SetDefault(ConfAuthgwCacheBacklog, 64)
 }
 
-func NewAuthgwBackend(
-	lc fx.Lifecycle,
-	shutdown fx.Shutdowner,
-	db *sqlx.DB,
-	rd *redis.Client,
-	log *zap.Logger,
-) (authgw.Backend, error) {
+func NewAuthgwBackend(db *sqlx.DB) (authgw.Backend, error) {
 	// Build auth gateway.
 	backend := authgw.Database{DB: db.DB}
 	cachedBackend, err := authgw.NewCache(&backend,
@@ -49,34 +40,6 @@ func NewAuthgwBackend(
 	if err != nil {
 		return nil, err
 	}
-	invalidation := authgw.CacheInvalidation{
-		Cache:     cachedBackend,
-		Redis:     rd,
-		StreamKey: viper.GetString(ConfAuthgwCacheStreamKey),
-		Backlog:   0,
-	}
-	if invalidation.StreamKey == "" {
-		log.Fatal("Missing " + ConfAuthgwCacheStreamKey)
-	}
-	log.Info("Starting auth cache invalidator")
-	innerCtx, cancel := context.WithCancel(context.Background())
-	lc.Append(fx.Hook{
-		OnStart: func(_ context.Context) error {
-			go func() {
-				if err := invalidation.Run(innerCtx); err != nil {
-					log.Error("Auth cache invalidation failed", zap.Error(err))
-					if err := shutdown.Shutdown(); err != nil {
-						log.Fatal("Shutdown failed")
-					}
-				}
-			}()
-			return nil
-		},
-		OnStop: func(_ context.Context) error {
-			cancel()
-			return nil
-		},
-	})
 	return cachedBackend, nil
 }
 
