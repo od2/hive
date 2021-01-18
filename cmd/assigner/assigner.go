@@ -22,7 +22,7 @@ var Cmd = cobra.Command{
 		"Running multiple assigners is allowed during surge upgrades.",
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
-		app := providers.NewApp(cmd, fx.Invoke(runAssigner))
+		app := providers.NewApp(fx.Invoke(Run))
 		app.Run()
 	},
 }
@@ -40,7 +40,7 @@ type assignerIn struct {
 	Meter         metric.Meter
 }
 
-func runAssigner(log *zap.Logger, inputs assignerIn) {
+func Run(log *zap.Logger, inputs assignerIn) {
 	// Spin up assigner.
 	metrics, err := njobs.NewAssignerMetrics(inputs.Meter)
 	if err != nil {

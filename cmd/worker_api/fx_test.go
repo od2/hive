@@ -9,12 +9,9 @@ import (
 
 func TestApp(t *testing.T) {
 	providerstest.Validate(t,
-		fx.Provide(
-			newWorkerAPIFlags,
-			runWorkerAPI,
-		),
+		fx.Provide(Server),
 		fx.Invoke(
-			newDiscoveryServer,
-			newAssignmentsServer,
+			NewDiscoveryServer,
+			NewAssignmentsServer,
 		))
 }
