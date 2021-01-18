@@ -14,6 +14,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/Shopify/sarama/mocks"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/pelletier/go-toml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.od2.network/hive/pkg/auth"
@@ -38,16 +39,12 @@ func TestBenchmark(t *testing.T) {
 		short bool
 		opts  *benchOptions
 	}
-	mockCollection1 := new(topology.Collection)
-	mockCollection1.Init()
-	mockCollection1.Name = "test"
-	mockCollection1.PKType = "BIGINT"
 	cases := []testCaseDef{
 		{
 			name:  "Tiny",
 			short: true,
 			opts: &benchOptions{
-				Collection: mockCollection1,
+				Collection: `Name = "test"`,
 				Workers:    6,
 				Sessions:   1,
 				Assigns:    2,
@@ -58,7 +55,7 @@ func TestBenchmark(t *testing.T) {
 			name:  "Warmup",
 			short: false,
 			opts: &benchOptions{
-				Collection: mockCollection1,
+				Collection: `Name = "test"`,
 				Workers:    32,
 				Sessions:   2,
 				Assigns:    50000,
@@ -69,21 +66,11 @@ func TestBenchmark(t *testing.T) {
 			name:  "Assign100000_Sessions64_Batch512",
 			short: false,
 			opts: &benchOptions{
-				Collection: &topology.Collection{
-					Name:                   "test",
-					PKType:                 "BIGINT",
-					TaskAssignments:        3,
-					AssignInterval:         250 * time.Millisecond,
-					AssignBatch:            512,
-					SessionTimeout:         5 * time.Minute,
-					SessionRefreshInterval: 3 * time.Second,
-					SessionExpireInterval:  10 * time.Second,
-					SessionExpireBatch:     16,
-					TaskTimeout:            time.Minute,
-					TaskExpireInterval:     2 * time.Second,
-					TaskExpireBatch:        128,
-					DeliverBatch:           512,
-				},
+				Collection: `
+Name = "test"
+PKType = "BIGINT"
+AssignBatch = 512
+`,
 				Workers:  32,
 				Sessions: 2,
 				Assigns:  100000,
@@ -94,30 +81,26 @@ func TestBenchmark(t *testing.T) {
 			name:  "Assign100000_Sessions64_Batch1024",
 			short: false,
 			opts: &benchOptions{
-				Collection: &topology.Collection{},
-				Workers:    32,
-				Sessions:   2,
-				Assigns:    100000,
-				QoS:        1024,
+				Collection: `
+Name = "test"
+PKType = "BIGINT"
+AssignBatch = 1024
+`,
+				Workers:  32,
+				Sessions: 2,
+				Assigns:  100000,
+				QoS:      1024,
 			},
 		},
 		{
 			name:  "Assign100000_Sessions64_Batch2048",
 			short: false,
 			opts: &benchOptions{
-				Collection: &topology.Collection{
-					TaskAssignments:        3,
-					AssignInterval:         250 * time.Millisecond,
-					AssignBatch:            2048,
-					SessionTimeout:         5 * time.Minute,
-					SessionRefreshInterval: 3 * time.Second,
-					SessionExpireInterval:  10 * time.Second,
-					SessionExpireBatch:     16,
-					TaskTimeout:            time.Minute,
-					TaskExpireInterval:     2 * time.Second,
-					TaskExpireBatch:        128,
-					DeliverBatch:           2048,
-				},
+				Collection: `
+Name = "test"
+PKType = "BIGINT"
+AssignBatch = 2048
+`,
 				Workers:  32,
 				Sessions: 2,
 				Assigns:  100000,
@@ -128,19 +111,11 @@ func TestBenchmark(t *testing.T) {
 			name:  "Assign100000_Sessions1024_Batch32",
 			short: false,
 			opts: &benchOptions{
-				Collection: &topology.Collection{
-					TaskAssignments:        3,
-					AssignInterval:         250 * time.Millisecond,
-					AssignBatch:            2048,
-					SessionTimeout:         5 * time.Minute,
-					SessionRefreshInterval: 3 * time.Second,
-					SessionExpireInterval:  10 * time.Second,
-					SessionExpireBatch:     16,
-					TaskTimeout:            time.Minute,
-					TaskExpireInterval:     2 * time.Second,
-					TaskExpireBatch:        128,
-					DeliverBatch:           32,
-				},
+				Collection: `
+Name = "test"
+PKType = "BIGINT"
+AssignBatch = 32
+`,
 				Workers:  512,
 				Sessions: 2,
 				Assigns:  100000,
@@ -160,9 +135,9 @@ func TestBenchmark(t *testing.T) {
 
 type benchOptions struct {
 	// Pipeline settings
-	*topology.Collection
-	Topic     string
-	Partition int32
+	Collection string
+	Topic      string
+	Partition  int32
 	// Benchmark settings
 	Workers  uint // Number of concurrent workers
 	Sessions uint // Number of sessions per worker
@@ -200,8 +175,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	rd, err := redisFactory.GetShard(topology.Shard{Collection: "test", Partition: int32(2)})
 	require.NoError(t, err)
 	collection := new(topology.Collection)
-	collection.Init()
-	collection.Name = "test"
+	require.NoError(t, toml.Unmarshal([]byte(opts.Collection), collection), "Collection config")
 	topo := &topology.Config{
 		Collections: []*topology.Collection{collection},
 		RedisShardFactory: &topology.RedisShardFactory{

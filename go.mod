@@ -24,3 +24,6 @@ require (
 	google.golang.org/grpc v1.35.0
 	google.golang.org/protobuf v1.25.0
 )
+
+// https://github.com/pelletier/go-toml/pull/464
+replace github.com/pelletier/go-toml => github.com/terorie/go-toml v1.8.2-0.20210118184423-69117aeb7d8a

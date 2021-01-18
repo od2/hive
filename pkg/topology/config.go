@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/pelletier/go-toml"
 )
 
 // Config holds the full topology configuration of a Hive cluster.
@@ -35,42 +36,29 @@ type Collection struct {
 	PKType string
 
 	// NAssign algorithm
-	TaskAssignments uint          // assignments per task
-	AssignInterval  time.Duration // assign/flush interval
-	AssignBatch     uint          // size of message to distribute to workers
+	TaskAssignments uint          `default:"3"`     // assignments per task
+	AssignInterval  time.Duration `default:"250ms"` // assign/flush interval
+	AssignBatch     uint          `default:"1024"`  // size of message to distribute to workers
 	// Session tracking
-	SessionTimeout         time.Duration // session TTL, i.e. time until a session without heart beats gets dropped
-	SessionRefreshInterval time.Duration // refresh session interval
-	SessionExpireInterval  time.Duration // max session expire interval
-	SessionExpireBatch     uint          // max sessions to expire at once
+	SessionTimeout         time.Duration `default:"5m"`  // session TTL, i.e. time until a session without heart beats gets dropped
+	SessionRefreshInterval time.Duration `default:"3s"`  // refresh session interval
+	SessionExpireInterval  time.Duration `default:"10s"` // max session expire interval
+	SessionExpireBatch     uint          `default:"16"`  // max sessions to expire at once
 	// Event streaming
-	TaskTimeout        time.Duration // in-flight assignment TTL, i.e. time given to worker to complete each task
-	TaskExpireInterval time.Duration // max task expire interval (runs sooner by default) // TODO unused
-	TaskExpireBatch    uint          // max assignments to expire at once
-	DeliverBatch       uint          // max assignments in one gRPC server-side event
+	TaskTimeout     time.Duration `default:"60s"`  // in-flight assignment TTL, i.e. time given to worker to complete each task
+	TaskExpireBatch uint          `default:"128"`  // max assignments to expire at once
+	DeliverBatch    uint          `default:"1024"` // max assignments in one gRPC server-side event
 	// Result reporting
-	ResultInterval time.Duration
-	ResultBatch    uint
-	ResultBackoff  time.Duration
-}
-
-var defaultCollection = Collection{
-	TaskAssignments:        3,
-	AssignInterval:         250 * time.Millisecond,
-	AssignBatch:            1024,
-	SessionTimeout:         5 * time.Minute,
-	SessionRefreshInterval: 3 * time.Second,
-	SessionExpireInterval:  10 * time.Second,
-	SessionExpireBatch:     16,
-	TaskTimeout:            time.Minute,
-	TaskExpireInterval:     2 * time.Second,
-	TaskExpireBatch:        128,
-	DeliverBatch:           1024,
+	ResultInterval time.Duration `default:"2s"`
+	ResultBatch    uint          `default:"128"`
+	ResultBackoff  time.Duration `default:"10s"`
 }
 
 // Init populates the default options.
 func (c *Collection) Init() {
-	*c = defaultCollection
+	if err := toml.Unmarshal([]byte(``), c); err != nil {
+		panic(err.Error())
+	}
 }
 
 // RedisShardFactory manages Redis shards.
