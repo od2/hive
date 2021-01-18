@@ -40,13 +40,12 @@ var Providers = []interface{}{
 	redisshard.NewFactory,
 }
 
-func NewApp(cmd *cobra.Command, opts ...fx.Option) *fx.App {
+func NewApp(opts ...fx.Option) *fx.App {
 	baseOpts := []fx.Option{
 		fx.Provide(Providers...),
-		fx.Supply(cmd),
 		fx.Supply(Log),
 		fx.Logger(zap.NewStdLog(Log)),
-		fx.Supply(otel.GetMeterProvider().Meter(cmd.Name())),
+		fx.Supply(otel.GetMeterProvider()),
 	}
 	baseOpts = append(baseOpts, opts...)
 	return fx.New(baseOpts...)

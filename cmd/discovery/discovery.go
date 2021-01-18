@@ -21,23 +21,20 @@ var Cmd = cobra.Command{
 	Short: "Run item discovery service.",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
-		app := providers.NewApp(
-			cmd,
-			fx.Invoke(runDiscovery),
-		)
+		app := providers.NewApp(fx.Invoke(Run))
 		app.Run()
 	},
 }
 
 // Discovery config keys.
 const (
-	ConfDiscoveryInterval = "discovery.interval"
-	ConfDiscoveryBatch    = "discovery.batch"
+	ConfInterval = "discovery.interval"
+	ConfBatch    = "discovery.batch"
 )
 
 func init() {
-	viper.SetDefault(ConfDiscoveryInterval, 2*time.Second)
-	viper.SetDefault(ConfDiscoveryBatch, uint(256))
+	viper.SetDefault(ConfInterval, 2*time.Second)
+	viper.SetDefault(ConfBatch, uint(256))
 }
 
 type discoveryIn struct {
@@ -51,15 +48,15 @@ type discoveryIn struct {
 	ConsumerGroup sarama.ConsumerGroup
 }
 
-func runDiscovery(log *zap.Logger, inputs discoveryIn) {
+func Run(log *zap.Logger, inputs discoveryIn) {
 	consumeTopics := make([]string, len(inputs.Topology.Collections))
 	for i, coll := range inputs.Topology.Collections {
 		consumeTopics[i] = topology.CollectionTopic(coll.Name, topology.TopicCollectionDiscovered)
 	}
 	// Set up SQL dedup.
 	worker := &discovery.Worker{
-		MaxDelay:  viper.GetDuration(ConfDiscoveryInterval),
-		BatchSize: viper.GetUint(ConfDiscoveryBatch),
+		MaxDelay:  viper.GetDuration(ConfInterval),
+		BatchSize: viper.GetUint(ConfBatch),
 
 		Topology: inputs.Topology,
 		Factory:  inputs.Factory,

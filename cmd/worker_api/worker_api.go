@@ -1,10 +1,9 @@
 package worker_api
 
 import (
-	"context"
-
 	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/discovery"
@@ -25,41 +24,28 @@ var Cmd = cobra.Command{
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
 		app := providers.NewApp(
-			cmd,
-			fx.Provide(
-				newWorkerAPIFlags,
-				runWorkerAPI,
-			),
+			fx.Provide(Server),
 			fx.Invoke(
-				newDiscoveryServer,
-				newAssignmentsServer,
+				NewDiscoveryServer,
+				NewAssignmentsServer,
 			),
 		)
 		app.Run()
 	},
 }
 
+// Management API config.
+const (
+	ConfListenNet  = "worker_api.listen.net"
+	ConfListenAddr = "worker_api.listen.addr"
+)
+
 func init() {
-	flags := Cmd.Flags()
-	flags.String("socket", "", "UNIX socket address")
+	viper.SetDefault(ConfListenNet, "tcp")
+	viper.SetDefault(ConfListenAddr, "localhost:7700")
 }
 
-type workerAPIFlags struct {
-	socket string
-}
-
-func newWorkerAPIFlags(cmd *cobra.Command) *workerAPIFlags {
-	flags := cmd.Flags()
-	socket, err := flags.GetString("socket")
-	if err != nil {
-		panic(err)
-	}
-	return &workerAPIFlags{
-		socket: socket,
-	}
-}
-
-func newDiscoveryServer(
+func NewDiscoveryServer(
 	log *zap.Logger,
 	server *grpc.Server,
 	producer sarama.SyncProducer,
@@ -70,7 +56,7 @@ func newDiscoveryServer(
 	})
 }
 
-func newAssignmentsServer(
+func NewAssignmentsServer(
 	log *zap.Logger,
 	server *grpc.Server,
 	topology *topology.Config,
@@ -84,10 +70,9 @@ func newAssignmentsServer(
 	types.RegisterAssignmentsServer(server, &streamer)
 }
 
-func runWorkerAPI(
+func Server(
 	lc fx.Lifecycle,
 	log *zap.Logger,
-	flags *workerAPIFlags,
 	interceptor *auth.WorkerAuthInterceptor,
 ) (*grpc.Server, error) {
 	// Get flags
@@ -96,24 +81,9 @@ func runWorkerAPI(
 		grpc.StreamInterceptor(interceptor.Stream()),
 	)
 	// Start listener
-	listen, err := providers.ListenUnix(flags.socket)
-	if err != nil {
-		return nil, err
-	}
-	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			go func() {
-				log.Info("Starting server", zap.String("socket", flags.socket))
-				if err := server.Serve(listen); err != nil {
-					log.Fatal("Server failed", zap.Error(err))
-				}
-			}()
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			server.Stop()
-			return nil
-		},
-	})
+	listen := providers.MustListen(log,
+		viper.GetString(ConfListenNet),
+		viper.GetString(ConfListenAddr))
+	providers.LifecycleServe(log, lc, listen, server)
 	return server, nil
 }

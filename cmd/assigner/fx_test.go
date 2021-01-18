@@ -8,5 +8,5 @@ import (
 )
 
 func TestApp(t *testing.T) {
-	providerstest.Validate(t, fx.Invoke(runAssigner))
+	providerstest.Validate(t, fx.Invoke(Run))
 }

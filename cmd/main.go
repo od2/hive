@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/cmd/admin_tool"
+	"go.od2.network/hive/cmd/allinone"
 	"go.od2.network/hive/cmd/assigner"
 	"go.od2.network/hive/cmd/discovery"
-	"go.od2.network/hive/cmd/github_auth"
 	"go.od2.network/hive/cmd/management_api"
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/cmd/reporter"
@@ -98,9 +98,9 @@ func init() {
 
 	rootCmd.AddCommand(
 		&admin_tool.Cmd,
+		&allinone.Cmd,
 		&assigner.Cmd,
 		&discovery.Cmd,
-		&github_auth.Cmd,
 		&management_api.Cmd,
 		&reporter.Cmd,
 		&worker_api.Cmd,

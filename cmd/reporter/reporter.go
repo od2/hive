@@ -21,10 +21,7 @@ var Cmd = cobra.Command{
 	Short: "Run result reporting service.",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
-		app := providers.NewApp(
-			cmd,
-			fx.Invoke(runReporter),
-		)
+		app := providers.NewApp(fx.Invoke(Run))
 		app.Run()
 	},
 }
@@ -52,10 +49,7 @@ type reporterIn struct {
 	ConsumerGroup sarama.ConsumerGroup
 }
 
-func runReporter(
-	log *zap.Logger,
-	inputs reporterIn,
-) {
+func Run(log *zap.Logger, inputs reporterIn) {
 	topics := make([]string, len(inputs.Topology.Collections))
 	for i, coll := range inputs.Topology.Collections {
 		topics[i] = topology.CollectionTopic(coll.Name, topology.TopicCollectionResults)
