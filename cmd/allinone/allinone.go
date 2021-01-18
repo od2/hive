@@ -11,6 +11,7 @@ import (
 	"go.uber.org/fx"
 )
 
+// Cmd is the all-in-one sub-command.
 var Cmd = cobra.Command{
 	Use:   "all-in-one",
 	Short: "Run all-in-one stack.",

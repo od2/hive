@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Sarama config keys.
 const (
 	ConfSaramaAddrs      = "sarama.addrs"
 	ConfSaramaConfigFile = "sarama.config_file"

@@ -31,6 +31,7 @@ func init() {
 	viper.SetDefault(ConfAuthgwCacheBacklog, 64)
 }
 
+// NewAuthgwBackend returns a worker auth gateway connected to the provided SQL DB.
 func NewAuthgwBackend(db *sqlx.DB) (authgw.Backend, error) {
 	// Build auth gateway.
 	backend := authgw.Database{DB: db.DB}
@@ -40,6 +41,7 @@ func NewAuthgwBackend(db *sqlx.DB) (authgw.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
+	// TODO Cache invalidation
 	return cachedBackend, nil
 }
 

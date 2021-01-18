@@ -14,6 +14,7 @@ type Config struct {
 	RedisShardFactory *RedisShardFactory
 }
 
+// Shard identifies a partition within a collection.
 type Shard struct {
 	Collection string
 	Partition  int32
@@ -76,7 +77,7 @@ type RedisShardFactoryStandalone struct {
 	Client *redis.Client // Existing client override
 }
 
-// CollectionName returns a Kafka topic on a collection.
+// CollectionTopic returns a Kafka topic on a collection.
 func CollectionTopic(collectionName, kind string) string {
 	return collectionName + "." + kind
 }

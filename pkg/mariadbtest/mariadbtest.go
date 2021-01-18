@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MariaDB is a test configuration with MariaDB 10.3 running in a Docker container,
+// Docker is a test configuration with MariaDB 10.3 running in a Docker container,
 // and a local client authenticated and attached to the DB.
 type Docker struct {
 	Resource *dockertest.Resource

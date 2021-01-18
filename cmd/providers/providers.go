@@ -26,6 +26,7 @@ var Providers = []interface{}{
 	NewMySQL,
 	// njobs.go
 	njobs.NewRedisClient,
+	njobs.NewAssignerMetrics,
 	// providers.go
 	NewContext,
 	// sarama.go
@@ -38,6 +39,8 @@ var Providers = []interface{}{
 	NewItemsFactory,
 	func(t *topology.Config) *topology.RedisShardFactory { return t.RedisShardFactory },
 	redisshard.NewFactory,
+	// OpenTelemetry
+	otel.GetMeterProvider,
 }
 
 func NewApp(opts ...fx.Option) *fx.App {
@@ -45,7 +48,6 @@ func NewApp(opts ...fx.Option) *fx.App {
 		fx.Provide(Providers...),
 		fx.Supply(Log),
 		fx.Logger(zap.NewStdLog(Log)),
-		fx.Supply(otel.GetMeterProvider()),
 	}
 	baseOpts = append(baseOpts, opts...)
 	return fx.New(baseOpts...)

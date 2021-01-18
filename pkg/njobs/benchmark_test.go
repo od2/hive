@@ -185,7 +185,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	}
 
 	// Build assigner.
-	metrics, err := NewAssignerMetrics(metric.NoopMeterProvider{}.Meter(""))
+	metrics, err := NewAssignerMetrics(metric.NoopMeterProvider{})
 	require.NoError(t, err)
 	assigner := &Assigner{
 		RedisFactory: redisFactory,

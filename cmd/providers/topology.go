@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Topology config keys.
 const (
 	ConfTopologyConfigFile = "topology.config_file"
 

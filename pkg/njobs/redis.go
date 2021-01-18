@@ -91,6 +91,9 @@ type RedisClient struct {
 	*Scripts
 }
 
+// NewRedisClient creates an NJobs Redis client for a given shard.
+//
+// Useful for dependency injection.
 func NewRedisClient(
 	rd *redis.Client,
 	shard *topology.Shard,

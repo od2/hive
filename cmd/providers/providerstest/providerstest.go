@@ -7,17 +7,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"go.od2.network/hive/cmd/providers"
-	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/fx"
 	"go.uber.org/zap/zaptest"
 )
 
+// Validate validates options passed to providers.NewApp.
 func Validate(t *testing.T, opts ...fx.Option) {
 	opts = append(opts,
 		fx.Supply(
 			zaptest.NewLogger(t),
 			context.Background(),
-			metric.Meter{},
 			new(cobra.Command),
 		),
 		fx.Logger(testFxLogger{t}),

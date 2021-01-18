@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Cmd is the discovery sub-command.
 var Cmd = cobra.Command{
 	Use:   "discovery",
 	Short: "Run item discovery service.",

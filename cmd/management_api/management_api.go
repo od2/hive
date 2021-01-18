@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Cmd is the management-api sub-command.
 var Cmd = cobra.Command{
 	Use:   "management-api",
 	Short: "Run management API server",

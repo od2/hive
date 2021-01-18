@@ -221,13 +221,16 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 	return
 }
 
+// AssignerMetrics holds OpenTelemetry metrics on the assigner.
 type AssignerMetrics struct {
 	batches metric.Int64Counter
 	offset  int64
 	assigns metric.Int64Counter
 }
 
-func NewAssignerMetrics(m metric.Meter) (*AssignerMetrics, error) {
+// NewAssignerMetrics creates default assigner metrics.
+func NewAssignerMetrics(provider metric.MeterProvider) (*AssignerMetrics, error) {
+	m := provider.Meter("assigner")
 	metrics := new(AssignerMetrics)
 	var err error
 	metrics.batches, err = m.NewInt64Counter("assigner_batches")

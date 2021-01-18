@@ -20,6 +20,7 @@ func init() {
 	viper.SetDefault(ConfMySQLDSN, "")
 }
 
+// NewMySQL connects an SQL client to the MySQL DSN from config.
 func NewMySQL(ctx context.Context, log *zap.Logger, lc fx.Lifecycle) (*sqlx.DB, error) {
 	// Force Go-compatible time handling.
 	cfg, err := mysql.ParseDSN(viper.GetString(ConfMySQLDSN))

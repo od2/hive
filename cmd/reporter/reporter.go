@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Cmd is the reporter sub-command.
 var Cmd = cobra.Command{
 	Use:   "reporter",
 	Short: "Run result reporting service.",

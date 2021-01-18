@@ -70,6 +70,7 @@ func NewAssignmentsServer(
 	types.RegisterAssignmentsServer(server, &streamer)
 }
 
+// Server registers the worker_api gRPC server to the lifecycle.
 func Server(
 	lc fx.Lifecycle,
 	log *zap.Logger,

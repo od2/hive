@@ -9,11 +9,11 @@ import (
 	"go.od2.network/hive/pkg/njobs"
 	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/topology/redisshard"
-	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
 
+// Cmd is the assigner sub-command.
 var Cmd = cobra.Command{
 	Use:   "assigner",
 	Short: "Run task assigner.",
@@ -37,21 +37,17 @@ type assignerIn struct {
 	RedisFactory  redisshard.Factory
 	ConsumerGroup sarama.ConsumerGroup
 	Producer      sarama.SyncProducer
-	Meter         metric.Meter
+	Metrics       *njobs.AssignerMetrics
 }
 
 func Run(log *zap.Logger, inputs assignerIn) {
 	// Spin up assigner.
-	metrics, err := njobs.NewAssignerMetrics(inputs.Meter)
-	if err != nil {
-		log.Fatal("Failed to create metrics", zap.Error(err))
-	}
 	assigner := njobs.Assigner{
 		RedisFactory: inputs.RedisFactory,
 		Producer:     inputs.Producer,
 		Topology:     inputs.Topology,
 		Log:          log,
-		Metrics:      metrics,
+		Metrics:      inputs.Metrics,
 	}
 	run := func() {
 		// Create list of topics.

@@ -22,6 +22,7 @@ func NewCache(cache simplelru.LRUCache, ttl time.Duration) *Cache {
 	return &Cache{LRUCache: cache, TTL: ttl}
 }
 
+// Add adds a value to the cache.
 func (c *Cache) Add(key, value interface{}) bool {
 	return c.LRUCache.Add(key, &cacheEntry{
 		data:        value,

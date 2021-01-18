@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Worker runs the result reporting mechanism.
 type Worker struct {
 	MaxDelay  time.Duration
 	BatchSize uint
