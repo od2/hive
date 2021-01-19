@@ -6,9 +6,13 @@ import (
 	"net/http/pprof"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Shopify/sarama"
+	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rcrowley/go-metrics"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/cmd/admin_tool"
@@ -20,7 +24,7 @@ import (
 	"go.od2.network/hive/cmd/reporter"
 	"go.od2.network/hive/cmd/worker_api"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/metric/prometheus"
+	otel_prometheus "go.opentelemetry.io/otel/exporters/metric/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -68,22 +72,16 @@ var rootCmd = cobra.Command{
 		if err != nil {
 			log.Fatal("Failed to build sarama logger", zap.Error(err))
 		}
-
 		internalListen := viper.GetString(ConfInternalListen)
 		if internalListen != "" {
-			exporter, err := prometheus.NewExportPipeline(prometheus.Config{})
-			if err != nil {
-				log.Fatal("Failed to build Prometheus exporter")
-			}
-			otel.SetMeterProvider(exporter.MeterProvider())
 			serveMux := http.NewServeMux()
-			serveMux.Handle("/metrics", exporter)
-			serveMux.HandleFunc("/debug/pprof/", pprof.Index)
-			serveMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-			serveMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-			serveMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-			serveMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-			go http.ListenAndServe(internalListen, serveMux)
+			if err := setupInternalEndpoints(serveMux); err != nil {
+				log.Fatal("Failed to setup internal endpoints", zap.Error(err))
+			}
+			go func() {
+				err := http.ListenAndServe(internalListen, serveMux)
+				log.Fatal("Internal server failed", zap.Error(err))
+			}()
 		}
 	},
 }
@@ -111,4 +109,34 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err.Error())
 	}
+}
+
+func setupInternalEndpoints(serveMux *http.ServeMux) error {
+	// Setup go-metrics Prometheus exporter.
+	gomProvder := prometheusmetrics.NewPrometheusProvider(
+		metrics.DefaultRegistry,
+		"hive", "",
+		prometheus.DefaultRegisterer,
+		15*time.Second)
+	go gomProvder.UpdatePrometheusMetrics()
+	// Set up OpenTelemetry Prometheus exporter.
+	exporter, err := otel_prometheus.NewExportPipeline(otel_prometheus.Config{})
+	if err != nil {
+		return fmt.Errorf("failed to build OpenTelemetry Prometheus exporter: %w", err)
+	}
+	otel.SetMeterProvider(exporter.MeterProvider())
+	serveMux.Handle("/metrics", exporter)
+	// Setup pprof debug endpoints.
+	serveMux.HandleFunc("/debug/pprof/", pprof.Index)
+	serveMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	serveMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	serveMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	serveMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	// Start server.
+	serveMux.HandleFunc("/healthz", func(wr http.ResponseWriter, _ *http.Request) {
+		wr.Header().Set("content-type", "text/plain")
+		wr.WriteHeader(http.StatusOK)
+		_, _ = wr.Write([]byte("OK\n"))
+	})
+	return nil
 }

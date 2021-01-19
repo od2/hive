@@ -90,7 +90,7 @@ func (s *session) nextBatch() (bool, error) {
 	var pointers []*types.ItemPointer
 	var offset int64
 readLoop:
-	for i := uint(0); i < s.BatchSize; i++ {
+	for {
 		select {
 		case <-timer.C:
 			break readLoop
@@ -108,6 +108,9 @@ readLoop:
 				return false, fmt.Errorf("invalid pointer: %w", err)
 			}
 			pointers = append(pointers, pointer)
+			if uint(len(pointers)) >= s.BatchSize {
+				break readLoop
+			}
 		}
 	}
 	if len(pointers) <= 0 {
