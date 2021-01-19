@@ -49,6 +49,7 @@ type reporterIn struct {
 	Sarama    sarama.Client
 }
 
+// Run hooks the reporter service into the application lifecycle.
 func Run(log *zap.Logger, inputs reporterIn) {
 	topics := make([]string, len(inputs.Topology.Collections))
 	for i, coll := range inputs.Topology.Collections {

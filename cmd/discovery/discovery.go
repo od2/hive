@@ -48,6 +48,7 @@ type discoveryIn struct {
 	Producer  sarama.SyncProducer
 }
 
+// Run hooks the discovery service into the application lifecycle.
 func Run(log *zap.Logger, inputs discoveryIn) {
 	consumeTopics := make([]string, len(inputs.Topology.Collections))
 	for i, coll := range inputs.Topology.Collections {

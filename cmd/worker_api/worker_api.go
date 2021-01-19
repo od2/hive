@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Cmd is the worker-api sub-command.
 var Cmd = cobra.Command{
 	Use:   "worker-api",
 	Short: "Run worker API server",
@@ -45,6 +46,7 @@ func init() {
 	viper.SetDefault(ConfListenAddr, "localhost:7700")
 }
 
+// NewDiscoveryServer registers the discovery service handler.
 func NewDiscoveryServer(
 	log *zap.Logger,
 	server *grpc.Server,
@@ -56,6 +58,7 @@ func NewDiscoveryServer(
 	})
 }
 
+// NewAssignmentsServer registers the assignments service handler.
 func NewAssignmentsServer(
 	log *zap.Logger,
 	server *grpc.Server,

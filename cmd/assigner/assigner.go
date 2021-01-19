@@ -39,6 +39,7 @@ type assignerIn struct {
 	Metrics      *njobs.AssignerMetrics
 }
 
+// Run hooks the assigner service into the application lifecycle.
 func Run(log *zap.Logger, inputs assignerIn) {
 	// Spin up assigner.
 	assigner := njobs.Assigner{

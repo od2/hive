@@ -45,6 +45,7 @@ func NewAuthgwBackend(db *sqlx.DB) (authgw.Backend, error) {
 	return cachedBackend, nil
 }
 
+// NewAuthgwSigner creates a worker token signer from config.
 func NewAuthgwSigner(log *zap.Logger) token.Signer {
 	authSecret := new([32]byte)
 	authSecretStr := viper.GetString(ConfAuthgwSecret)
@@ -57,6 +58,7 @@ func NewAuthgwSigner(log *zap.Logger) token.Signer {
 	return token.NewSimpleSigner(authSecret)
 }
 
+// NewWorkerAuthInterceptor creates a gRPC server auth interceptor according to config.
 func NewWorkerAuthInterceptor(
 	log *zap.Logger,
 	backend authgw.Backend,
@@ -69,10 +71,12 @@ func NewWorkerAuthInterceptor(
 	}
 }
 
+// AuthgwCache wraps cachegc.Cache for dependency injection.
 type AuthgwCache struct {
 	*cachegc.Cache
 }
 
+// NewAuthgwCache creates an auth LRU cache according to config.
 func NewAuthgwCache() AuthgwCache {
 	baseCache, err := lru.New(viper.GetInt(ConfAuthgwCacheSize))
 	if err != nil {

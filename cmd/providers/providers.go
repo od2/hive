@@ -41,6 +41,7 @@ var Providers = []interface{}{
 	otel.GetMeterProvider,
 }
 
+// NewApp creates an fx.App with default infrastructure.
 func NewApp(opts ...fx.Option) *fx.App {
 	baseOpts := []fx.Option{
 		fx.Provide(Providers...),
@@ -51,6 +52,7 @@ func NewApp(opts ...fx.Option) *fx.App {
 	return fx.New(baseOpts...)
 }
 
+// NewCmd creates an fx.App within a cobra command handler.
 func NewCmd(invoke interface{}) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		app := fx.New(

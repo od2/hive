@@ -6,6 +6,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/pelletier/go-toml"
+	"github.com/rcrowley/go-metrics"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -22,6 +23,7 @@ func init() {
 	viper.SetDefault(ConfSaramaConfigFile, "")
 }
 
+// NewSaramaConfig loads the sarama config file and integrates it into the application.
 func NewSaramaConfig(log *zap.Logger) (*sarama.Config, error) {
 	// Since sarama has so many options, it's easiest to read in a file.
 	configFilePath := viper.GetString(ConfSaramaConfigFile)
@@ -31,6 +33,7 @@ func NewSaramaConfig(log *zap.Logger) (*sarama.Config, error) {
 	log.Info("Reading sarama config",
 		zap.String(ConfSaramaConfigFile, configFilePath))
 	config := sarama.NewConfig()
+	config.MetricRegistry = metrics.NewPrefixedChildRegistry(metrics.DefaultRegistry, "sarama.")
 	f, err := os.Open(configFilePath)
 	if err != nil {
 		return nil, err
@@ -46,6 +49,7 @@ func NewSaramaConfig(log *zap.Logger) (*sarama.Config, error) {
 	return config, nil
 }
 
+// NewSaramaClient creates the sarama client form the default config file and bootstrap servers.
 func NewSaramaClient(lc fx.Lifecycle, log *zap.Logger, config *sarama.Config) (sarama.Client, error) {
 	// Construct client.
 	addrs := viper.GetStringSlice(ConfSaramaAddrs)
@@ -63,6 +67,8 @@ func NewSaramaClient(lc fx.Lifecycle, log *zap.Logger, config *sarama.Config) (s
 	return client, nil
 }
 
+// GetSaramaConsumerGroup creates a sarama consumer group by name,
+// and integrates it into the application lifecycle.
 func GetSaramaConsumerGroup(
 	lc fx.Lifecycle,
 	log *zap.Logger,
@@ -84,6 +90,8 @@ func GetSaramaConsumerGroup(
 	return consumerGroup, nil
 }
 
+// NewSaramaSyncProducer creates a sarama.SyncProducer,
+// and integrates it into the application lifecycle.
 func NewSaramaSyncProducer(
 	log *zap.Logger,
 	saramaClient sarama.Client,

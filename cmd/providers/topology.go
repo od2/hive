@@ -20,6 +20,7 @@ func init() {
 	viper.SetDefault(ConfTopologyConfigFile, "")
 }
 
+// NewTopologyConfig reads the topology config file.
 func NewTopologyConfig(log *zap.Logger) (*topology.Config, error) {
 	configFilePath := viper.GetString(ConfTopologyConfigFile)
 	if configFilePath == "" {
@@ -40,6 +41,7 @@ func NewTopologyConfig(log *zap.Logger) (*topology.Config, error) {
 	return config, nil
 }
 
+// NewItemsFactory creates a factory for item stores given a database and topology.
 func NewItemsFactory(db *sqlx.DB, topo *topology.Config) *items.Factory {
 	return &items.Factory{
 		DB:       db,

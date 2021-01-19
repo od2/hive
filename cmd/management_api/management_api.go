@@ -38,6 +38,7 @@ func init() {
 	viper.SetDefault(ConfListenAddr, "localhost:7701")
 }
 
+// Run hooks the management-api service into the application lifecycle.
 func Run(
 	lc fx.Lifecycle,
 	log *zap.Logger,
