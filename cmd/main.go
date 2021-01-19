@@ -6,13 +6,9 @@ import (
 	"net/http/pprof"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/Shopify/sarama"
-	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rcrowley/go-metrics"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.od2.network/hive/cmd/admin_tool"
@@ -23,8 +19,6 @@ import (
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/cmd/reporter"
 	"go.od2.network/hive/cmd/worker_api"
-	"go.opentelemetry.io/otel"
-	otel_prometheus "go.opentelemetry.io/otel/exporters/metric/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -112,19 +106,10 @@ func main() {
 }
 
 func setupInternalEndpoints(serveMux *http.ServeMux) error {
-	// Setup go-metrics Prometheus exporter.
-	gomProvder := prometheusmetrics.NewPrometheusProvider(
-		metrics.DefaultRegistry,
-		"hive", "",
-		prometheus.DefaultRegisterer,
-		15*time.Second)
-	go gomProvder.UpdatePrometheusMetrics()
-	// Set up OpenTelemetry Prometheus exporter.
-	exporter, err := otel_prometheus.NewExportPipeline(otel_prometheus.Config{})
+	exporter, err := providers.SetupPrometheus()
 	if err != nil {
-		return fmt.Errorf("failed to build OpenTelemetry Prometheus exporter: %w", err)
+		return err
 	}
-	otel.SetMeterProvider(exporter.MeterProvider())
 	serveMux.Handle("/metrics", exporter)
 	// Setup pprof debug endpoints.
 	serveMux.HandleFunc("/debug/pprof/", pprof.Index)

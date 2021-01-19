@@ -5,7 +5,7 @@ go 1.15
 require (
 	github.com/Shopify/sarama v1.27.2
 	github.com/cenkalti/backoff/v4 v4.1.0
-	github.com/deathowl/go-metrics-prometheus v0.0.0-20200518174047-74482eab5bfb // indirect
+	github.com/deathowl/go-metrics-prometheus v0.0.0-20200518174047-74482eab5bfb
 	github.com/go-redis/redis/v8 v8.4.8
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/golang/protobuf v1.4.3
@@ -13,6 +13,8 @@ require (
 	github.com/jmoiron/sqlx v1.2.1-0.20201120164427-00c6e74d816a
 	github.com/ory/dockertest/v3 v3.6.3
 	github.com/pelletier/go-toml v1.8.1
+	github.com/prometheus/client_golang v1.9.0
+	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
 	github.com/rs/xid v1.2.1
 	github.com/spf13/cobra v1.1.1
 	github.com/spf13/viper v1.7.1
