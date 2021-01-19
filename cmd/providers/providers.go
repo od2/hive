@@ -27,7 +27,6 @@ var Providers = []interface{}{
 	NewMySQL,
 	// njobs.go
 	njobs.NewRedisClient,
-	njobs.NewAssignerMetrics,
 	// sarama.go
 	NewSaramaConfig,
 	NewSaramaClient,
