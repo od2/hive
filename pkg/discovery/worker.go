@@ -177,7 +177,7 @@ readLoop:
 	}
 	s.Log.Debug("Flushed batch")
 	atomic.AddInt64(&s.metrics.batches, 1)
-	atomic.AddInt64(&s.metrics.items, int64(len(pointers)))
+	atomic.AddInt64(&s.metrics.items, int64(len(preDedupItems)))
 	atomic.AddInt64(&s.metrics.newItems, int64(len(dedupItems)))
 	return true, nil
 }
