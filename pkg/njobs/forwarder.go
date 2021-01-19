@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -15,18 +16,19 @@ import (
 	"go.uber.org/zap"
 )
 
-// ResultForwarder reads task results from Redis Streams and publishes them to Kafka.
+// forwarder reads task results from Redis Streams and publishes them to Kafka.
 //
 // It is not safe to run concurrently (will cause duplicate produced messages).
-type ResultForwarder struct {
+type forwarder struct {
 	RedisClient *RedisClient
 	Producer    sarama.SyncProducer
 	Topic       string
 	Log         *zap.Logger
+	metrics     *assignerShardMetrics
 }
 
 // Run moves task results from Redis Streams to Kafka.
-func (r *ResultForwarder) Run(ctx context.Context) error {
+func (r *forwarder) run(ctx context.Context) error {
 	for {
 		if err := r.step(ctx); err != nil {
 			return err
@@ -35,7 +37,7 @@ func (r *ResultForwarder) Run(ctx context.Context) error {
 }
 
 // step reads a batch of results from Redis Streams and moves them to Kafka.
-func (r *ResultForwarder) step(ctx context.Context) error {
+func (r *forwarder) step(ctx context.Context) error {
 	// Read results from Redis.
 	streams, err := r.RedisClient.Redis.XRead(ctx, &redis.XReadArgs{
 		Streams: []string{r.RedisClient.PartitionKeys.Results, "0-0"},
@@ -110,5 +112,7 @@ func (r *ResultForwarder) step(ctx context.Context) error {
 		return fmt.Errorf("failed to mark Redis messages as done: %w", err)
 	}
 	r.Log.Debug("Flushed batch")
+	atomic.AddInt64(&r.metrics.forwardBatches, 1)
+	atomic.AddInt64(&r.metrics.forwardResults, int64(len(msgs)))
 	return nil
 }

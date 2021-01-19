@@ -26,7 +26,6 @@ import (
 	"go.od2.network/hive/pkg/topology/redisshard"
 	"go.od2.network/hive/pkg/types"
 	"go.od2.network/hive/pkg/worker"
-	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
@@ -172,7 +171,8 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 
 	// Fake topology.
 	redisFactory := &redisshard.StandaloneFactory{Redis: redis.Client}
-	rd, err := redisFactory.GetShard(topology.Shard{Collection: "test", Partition: int32(2)})
+	shard := topology.Shard{Collection: "test", Partition: int32(2)}
+	rd, err := redisFactory.GetShard(shard)
 	require.NoError(t, err)
 	collection := new(topology.Collection)
 	require.NoError(t, toml.Unmarshal([]byte(opts.Collection), collection), "Collection config")
@@ -186,14 +186,11 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 	}
 
 	// Build assigner.
-	metrics, err := NewAssignerMetrics(metric.NoopMeterProvider{})
-	require.NoError(t, err)
 	assigner := &Assigner{
 		RedisFactory: redisFactory,
 		Producer:     mocks.NewSyncProducer(t, sarama.NewConfig()),
 		Topology:     topo,
 		Log:          zaptest.NewLogger(t),
-		Metrics:      metrics,
 	}
 	// Build streamer.
 	streamer := &Streamer{

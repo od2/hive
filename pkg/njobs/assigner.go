@@ -10,6 +10,8 @@ import (
 	"github.com/Shopify/sarama"
 	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/topology/redisshard"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
@@ -29,8 +31,6 @@ type Assigner struct {
 	Producer     sarama.SyncProducer
 	Topology     *topology.Config
 	Log          *zap.Logger
-
-	Metrics *AssignerMetrics
 }
 
 // Setup is called by sarama when the consumer group member starts.
@@ -84,19 +84,24 @@ func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 		}
 	}()
 
+	// Register shard to OpenTelemetry.
+	metrics := newAssignerShardMetrics(shard)
+	defer metrics.close()
+
 	// Start forwarder background routine and listen for error.
-	forwarder := ResultForwarder{
+	forwarder := forwarder{
 		RedisClient: njobsRedis,
 		Producer:    a.Producer,
 		Topic:       topology.CollectionTopic(collectionName, topology.TopicCollectionResults),
 		Log:         a.Log.Named("forwarder"),
+		metrics:     metrics,
 	}
 	forwarderErrC := make(chan error, 1)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer close(forwarderErrC)
-		err := forwarder.Run(ctx)
+		err := forwarder.run(ctx)
 		if ctx.Err() == nil {
 			forwarderErrC <- err
 		}
@@ -108,7 +113,9 @@ func (a *Assigner) ConsumeClaim(session sarama.ConsumerGroupSession, claim saram
 		r:        njobsRedis,
 		session:  session,
 		claim:    claim,
+		metrics:  metrics,
 	}
+	defer s.metrics.close()
 	// Start consumer loop.
 	ticker := time.NewTicker(njobsRedis.Collection.AssignInterval)
 	defer ticker.Stop()
@@ -152,6 +159,7 @@ type assignerState struct {
 	window  []*sarama.ConsumerMessage // unacknowledged messages
 	session sarama.ConsumerGroupSession
 	claim   sarama.ConsumerGroupClaim
+	metrics *assignerShardMetrics
 }
 
 // flush loops doing flush attempts until all messages are assigned.
@@ -205,55 +213,147 @@ func (s *assignerState) flushStep(ctx context.Context) (ok bool, err error) {
 		// - there are no active workers.
 		// - workers are slower than the Kafka message stream.
 		ok = false
-		// TODO Mark this in metrics.
 	} else if assignErr != nil {
 		return false, fmt.Errorf("failed to run assign tasks algorithm: %w", assignErr)
 	} else {
 		// Batch has been processed completely
 		ok = true
 	}
-	atomic.StoreInt64(&s.Metrics.offset, lastOffset)
-	s.Metrics.assigns.Add(ctx, count)
+	// Update metrics.
+	atomic.StoreInt64(&s.metrics.offset, lastOffset)
+	atomic.AddInt64(&s.metrics.assigns, count)
+	atomic.AddInt64(&s.metrics.assignBatches, 1)
+	if ok {
+		atomic.AddInt64(&s.metrics.assignProgressBatches, 1)
+	}
 	if count > 0 {
 		s.Log.Debug("Assigning tasks",
 			zap.Int64("assigner.offset", lastOffset),
 			zap.Int64("assigner.count", count),
 			zap.Bool("assigner.ok", ok))
 	}
+	// Move messages from window to channel, update Kafka.
 	if len(s.window) > 0 {
 		s.session.MarkMessage(s.window[len(s.window)-1], "")
+		s.session.Commit() // commit, since auto-commit is off
 	}
-	// Move messages from window to channel.
 	for len(s.window) > 0 && s.window[0].Offset <= lastOffset {
 		s.window = s.window[1:]
 	}
 	return
 }
 
-// AssignerMetrics holds OpenTelemetry metrics on the assigner.
-type AssignerMetrics struct {
-	batches metric.Int64Counter
-	offset  int64
-	assigns metric.Int64Counter
+// assignerMetrics holds OpenTelemetry metrics on the assigner.
+type assignerMetrics struct {
+	observer metric.BatchObserver
+	lock     sync.Mutex
+	shards   map[topology.Shard]*assignerShardMetrics
+	// Assigner
+	assignBatches         metric.Int64SumObserver
+	assignProgressBatches metric.Int64SumObserver
+	assigns               metric.Int64SumObserver
+	offsets               metric.Int64ValueObserver
+	// Forwarder
+	forwardBatches metric.Int64SumObserver
+	forwardResults metric.Int64SumObserver
 }
 
-// NewAssignerMetrics creates default assigner metrics.
-func NewAssignerMetrics(provider metric.MeterProvider) (*AssignerMetrics, error) {
-	m := provider.Meter("assigner")
-	metrics := new(AssignerMetrics)
+// assignerMetrics singleton.
+var theAssignerMetrics assignerMetrics
+var onceAssignerMetrics sync.Once
+
+// assignerShardMetrics holds OpenTelemetry metrics of a single shard.
+type assignerShardMetrics struct {
+	shard topology.Shard
+	kvs   []label.KeyValue
+	// Assigner
+	assignBatches         int64 // atomic
+	assignProgressBatches int64 // atomic
+	assigns               int64 // atomic
+	offset                int64 // atomic
+	// Forwarder
+	forwardBatches int64 // atomic
+	forwardResults int64 // atomic
+}
+
+// newAssignerShardMetrics creates metrics for an assigner shard.
+func newAssignerShardMetrics(shard topology.Shard) *assignerShardMetrics {
+	m := getAssignerMetrics()
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	shardMetrics := &assignerShardMetrics{
+		shard: shard,
+		kvs: []label.KeyValue{
+			label.String("hive.collection", shard.Collection),
+			label.Int32("hive.partition", shard.Partition),
+		},
+	}
+	m.shards[shard] = shardMetrics
+	return shardMetrics
+}
+
+// close stops metrics collections for an assigner shard.
+func (a *assignerShardMetrics) close() {
+	m := getAssignerMetrics()
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	delete(m.shards, a.shard)
+}
+
+// getAssignerMetrics gets the assigner metrics singleton.
+func getAssignerMetrics() *assignerMetrics {
+	onceAssignerMetrics.Do(theAssignerMetrics.init)
+	return &theAssignerMetrics
+}
+
+// init should not be called directly.
+func (a *assignerMetrics) init() {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	a.shards = make(map[topology.Shard]*assignerShardMetrics)
+	meter := otel.Meter("hive.assigner")
+	obs := meter.NewBatchObserver(func(ctx context.Context, res metric.BatchObserverResult) {
+		a.lock.Lock()
+		defer a.lock.Unlock()
+		for _, shard := range a.shards {
+			res.Observe(shard.kvs,
+				a.assignBatches.Observation(atomic.LoadInt64(&shard.assignBatches)),
+				a.assignProgressBatches.Observation(atomic.LoadInt64(&shard.assignProgressBatches)),
+				a.assigns.Observation(atomic.LoadInt64(&shard.assigns)),
+				a.offsets.Observation(atomic.LoadInt64(&shard.offset)),
+				a.forwardBatches.Observation(atomic.LoadInt64(&shard.forwardBatches)),
+				a.forwardResults.Observation(atomic.LoadInt64(&shard.forwardResults)))
+		}
+	})
 	var err error
-	metrics.batches, err = m.NewInt64Counter("assigner_batches")
+	a.assignBatches, err = obs.NewInt64SumObserver("hive_assigner_batch_count",
+		metric.WithDescription("Hive task assignment batches processed"))
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	if _, err := m.NewInt64UpDownSumObserver("assigner_offset", func(_ context.Context, res metric.Int64ObserverResult) {
-		res.Observe(atomic.LoadInt64(&metrics.offset))
-	}); err != nil {
-		return nil, err
-	}
-	metrics.assigns, err = m.NewInt64Counter("assigner_assigns_count")
+	a.assignProgressBatches, err = obs.NewInt64SumObserver("hive_assigner_batch_progress_count",
+		metric.WithDescription("Hive task assignment batches with progress processed"))
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	return metrics, nil
+	a.offsets, err = obs.NewInt64ValueObserver("hive_assigner_offset",
+		metric.WithDescription("Hive latest task assignment Kafka offset"))
+	if err != nil {
+		panic(err)
+	}
+	a.assigns, err = obs.NewInt64SumObserver("hive_assigner_assign_count",
+		metric.WithDescription("Hive task assignments total"))
+	if err != nil {
+		panic(err)
+	}
+	a.forwardBatches, err = obs.NewInt64SumObserver("hive_assigner_forward_batch_count",
+		metric.WithDescription("Hive task result batches registered"))
+	if err != nil {
+		panic(err)
+	}
+	a.forwardResults, err = obs.NewInt64SumObserver("hive_assigner_forward_result_count",
+		metric.WithDescription("Hive task results count registered"))
+	if err != nil {
+		panic(err)
+	}
 }

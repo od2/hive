@@ -36,7 +36,6 @@ type assignerIn struct {
 	RedisFactory redisshard.Factory
 	Sarama       sarama.Client
 	Producer     sarama.SyncProducer
-	Metrics      *njobs.AssignerMetrics
 }
 
 // Run hooks the assigner service into the application lifecycle.
@@ -47,7 +46,6 @@ func Run(log *zap.Logger, inputs assignerIn) {
 		Producer:     inputs.Producer,
 		Topology:     inputs.Topology,
 		Log:          log,
-		Metrics:      inputs.Metrics,
 	}
 	consumerGroup, err := providers.GetSaramaConsumerGroup(inputs.Lifecycle, log, inputs.Sarama, "hive.assigner")
 	if err != nil {
