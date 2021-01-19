@@ -262,7 +262,7 @@ type assignerMetrics struct {
 var theAssignerMetrics assignerMetrics
 var onceAssignerMetrics sync.Once
 
-// assignerMetrics holds OpenTelemetry metrics of a single shard.
+// assignerShardMetrics holds OpenTelemetry metrics of a single shard.
 type assignerShardMetrics struct {
 	shard topology.Shard
 	kvs   []label.KeyValue

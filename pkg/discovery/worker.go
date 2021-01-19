@@ -2,7 +2,10 @@
 package discovery
 
 import (
+	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -11,6 +14,9 @@ import (
 	"go.od2.network/hive/pkg/items"
 	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/types"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -52,6 +58,9 @@ func (w *Worker) ConsumeClaim(
 	}
 	// TODO Support other types of dedup
 	deduper := dedup.SQL{Store: itemsStore}
+	shard := topology.Shard{Collection: collectionName, Partition: claim.Partition()}
+	metrics := newShardMetrics(shard)
+	defer metrics.close()
 	sess := session{
 		Worker:     w,
 		collection: collectionName,
@@ -59,6 +68,7 @@ func (w *Worker) ConsumeClaim(
 		claim:      claim,
 		items:      itemsStore,
 		deduper:    &deduper,
+		metrics:    metrics,
 	}
 	// Loop over messages.
 	for {
@@ -79,6 +89,7 @@ type session struct {
 	claim      sarama.ConsumerGroupClaim
 	items      *items.Store
 	deduper    dedup.Dedup
+	metrics    *shardMetrics
 	// TODO Have a logger per session
 }
 
@@ -166,4 +177,92 @@ readLoop:
 	}
 	s.Log.Debug("Flushed batch")
 	return true, nil
+}
+
+// metrics holds OpenTelemetry metrics.
+type metrics struct {
+	observer metric.BatchObserver
+	lock     sync.Mutex
+	shards   map[topology.Shard]*shardMetrics
+	// Metrics
+	batches  metric.Int64SumObserver
+	items    metric.Int64SumObserver
+	newItems metric.Int64SumObserver
+}
+
+// metrics singleton.
+var theMetrics metrics
+var onceMetrics sync.Once
+
+// shardMetrics holds OpenTelemetry metrics of a single shard.
+type shardMetrics struct {
+	shard topology.Shard
+	kvs   []label.KeyValue
+	// Metrics
+	batches  int64 // atomic
+	items    int64 // atomic
+	newItems int64 // atomic
+}
+
+func newShardMetrics(shard topology.Shard) *shardMetrics {
+	m := getMetrics()
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	shardMetrics := &shardMetrics{
+		shard: shard,
+		kvs: []label.KeyValue{
+			label.String("hive.collection", shard.Collection),
+			label.Int32("hive.partition", shard.Partition),
+		},
+	}
+	m.shards[shard] = shardMetrics
+	return shardMetrics
+}
+
+// close stops metrics collections for an assigner shard.
+func (a *shardMetrics) close() {
+	m := getMetrics()
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	delete(m.shards, a.shard)
+}
+
+// getMetrics gets the assigner metrics singleton.
+func getMetrics() *metrics {
+	onceMetrics.Do(theMetrics.init)
+	return &theMetrics
+}
+
+// init should not be called directly.
+func (a *metrics) init() {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	a.shards = make(map[topology.Shard]*shardMetrics)
+	meter := otel.Meter("hive.discovery")
+	obs := meter.NewBatchObserver(func(ctx context.Context, res metric.BatchObserverResult) {
+		a.lock.Lock()
+		defer a.lock.Unlock()
+		for _, shard := range a.shards {
+			res.Observe(shard.kvs,
+				a.batches.Observation(atomic.LoadInt64(&shard.batches)),
+				a.items.Observation(atomic.LoadInt64(&shard.items)),
+				a.newItems.Observation(atomic.LoadInt64(&shard.newItems)))
+		}
+	})
+	var err error
+	a.batches, err = obs.NewInt64SumObserver("hive_discovery_batch_count",
+		metric.WithDescription("Hive discovered items batches processed"))
+	if err != nil {
+		panic(err)
+	}
+	a.items, err = obs.NewInt64SumObserver("hive_discovery_items_count",
+		metric.WithDescription("Hive discovered items total processed"))
+	if err != nil {
+		panic(err)
+	}
+	a.newItems, err = obs.NewInt64SumObserver("hive_discovery_new_items_count",
+		metric.WithDescription("Hive newly discovered items"))
+	if err != nil {
+		panic(err)
+	}
 }
