@@ -1,4 +1,4 @@
-package admin_tool
+package admintool
 
 import "github.com/spf13/cobra"
 

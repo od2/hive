@@ -1,4 +1,4 @@
-package management_api
+package management
 
 import (
 	"testing"

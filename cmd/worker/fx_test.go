@@ -1,4 +1,4 @@
-package worker_api
+package worker
 
 import (
 	"testing"

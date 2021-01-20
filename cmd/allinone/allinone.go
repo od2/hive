@@ -4,10 +4,10 @@ import (
 	"github.com/spf13/cobra"
 	"go.od2.network/hive/cmd/assigner"
 	"go.od2.network/hive/cmd/discovery"
-	"go.od2.network/hive/cmd/management_api"
+	"go.od2.network/hive/cmd/management"
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/cmd/reporter"
-	"go.od2.network/hive/cmd/worker_api"
+	"go.od2.network/hive/cmd/worker"
 	"go.uber.org/fx"
 )
 
@@ -28,13 +28,13 @@ var opts = []fx.Option{
 	// discovery
 	fx.Invoke(discovery.Run),
 	// management_api
-	fx.Invoke(management_api.Run),
+	fx.Invoke(management.Run),
 	// reporter
 	fx.Invoke(reporter.Run),
 	// worker_api
-	fx.Provide(worker_api.Server),
+	fx.Provide(worker.Server),
 	fx.Invoke(
-		worker_api.NewDiscoveryServer,
-		worker_api.NewAssignmentsServer,
+		worker.NewDiscoveryServer,
+		worker.NewAssignmentsServer,
 	),
 }
