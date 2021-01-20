@@ -292,38 +292,46 @@ func (s *session) numPending(ctx context.Context) (int32, error) {
 func (s *session) pull(assigns chan<- *types.Assignment) error {
 	defer close(assigns)
 	return backoff.RetryNotify(func() error {
-		// Connect to stream.
-		grpcStream, err := s.Assignments.StreamAssignments(s.hardCtx, &types.StreamAssignmentsRequest{
-			StreamId:   s.sessionID,
-			Collection: s.Collection,
-		})
-		if s, ok := status.FromError(err); ok && s.Code() == codes.NotFound {
-			return backoff.Permanent(fmt.Errorf("stream closed"))
-		} else if err != nil {
-			return err
+		err := s.pullOne(assigns)
+		if errors.Is(err, context.Canceled) {
+			return backoff.Permanent(context.Canceled)
+		} else if s, ok := status.FromError(err); ok && s.Code() == codes.NotFound {
+			return backoff.Permanent(s.Err())
 		}
-		defer grpcStream.CloseSend()
-		sessStream := &stream{
-			session: s,
-			stream:  grpcStream,
-		}
-		// Check if outer context is done so we close the session.
-		if ctxErr := s.softCtx.Err(); ctxErr != nil {
-			// Gracefully shut down and fetch all pending tasks.
-			if s.GracePeriod > 0 {
-				sessStream.drain(assigns)
-				return nil
-			}
-			if errors.Is(ctxErr, context.Canceled) {
-				return nil
-			}
-			return backoff.Permanent(ctxErr)
-		}
-		// Pull items from stream.
-		return sessStream.pull(s.softCtx, assigns)
+		return err
 	}, s.StreamBackoff, func(err error, dur time.Duration) {
 		s.Log.Error("Stream failed, retrying", zap.Error(err), zap.Duration("backoff", dur))
 	})
+}
+
+func (s *session) pullOne(assigns chan<- *types.Assignment) error {
+	// Connect to stream.
+	grpcStream, err := s.Assignments.StreamAssignments(s.hardCtx, &types.StreamAssignmentsRequest{
+		StreamId:   s.sessionID,
+		Collection: s.Collection,
+	})
+	if err != nil {
+		return err
+	}
+	defer grpcStream.CloseSend()
+	sessStream := &stream{
+		session: s,
+		stream:  grpcStream,
+	}
+	// Check if outer context is done so we close the session.
+	if ctxErr := s.softCtx.Err(); ctxErr != nil {
+		// Gracefully shut down and fetch all pending tasks.
+		if s.GracePeriod > 0 {
+			sessStream.drain(assigns)
+			return nil
+		}
+		if errors.Is(ctxErr, context.Canceled) {
+			return nil
+		}
+		return backoff.Permanent(ctxErr)
+	}
+	// Pull items from stream.
+	return sessStream.pull(s.softCtx, assigns)
 }
 
 // stream is a single gRPC stream in a worker session.
