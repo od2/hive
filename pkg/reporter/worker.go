@@ -6,9 +6,9 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
+	"go.od2.network/hive-api"
 	"go.od2.network/hive/pkg/items"
 	"go.od2.network/hive/pkg/topology"
-	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -75,7 +75,7 @@ func (s *session) nextBatch() (bool, error) {
 	timer := time.NewTimer(s.MaxDelay)
 	defer timer.Stop()
 	// Read message batch from Kafka.
-	var results []*types.AssignmentResult
+	var results []*hive.AssignmentResult
 	var offset int64
 readLoop:
 	for i := uint(0); i < s.BatchSize; i++ {
@@ -88,7 +88,7 @@ readLoop:
 				return false, nil
 			}
 			offset = msg.Offset
-			pointer := new(types.AssignmentResult)
+			pointer := new(hive.AssignmentResult)
 			if err := proto.Unmarshal(msg.Value, pointer); err != nil {
 				return false, fmt.Errorf("invalid Protobuf from Kafka: %w", err)
 			}

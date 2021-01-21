@@ -8,7 +8,7 @@ import (
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/jmoiron/sqlx"
-	"go.od2.network/hive/pkg/types"
+	"go.od2.network/hive-api"
 )
 
 // Store stores a collection of items.
@@ -41,7 +41,7 @@ type itemStoreRow struct {
 
 // InsertDiscovered inserts newly found items into the items table.
 // If the items already exist, nothing is done.
-func (i *Store) InsertDiscovered(ctx context.Context, pointers []*types.ItemPointer) error {
+func (i *Store) InsertDiscovered(ctx context.Context, pointers []*hive.ItemPointer) error {
 	// language=MariaDB
 	const stmt = `INSERT IGNORE INTO %s (item_id, found_t)
 VALUES (:item_id, :found_t);`
@@ -94,7 +94,7 @@ func (i *Store) FilterNewPointers(ctx context.Context, itemIDs []string) ([]stri
 }
 
 // PushAssignmentResults updates items with task results.
-func (i *Store) PushAssignmentResults(ctx context.Context, results []*types.AssignmentResult) error {
+func (i *Store) PushAssignmentResults(ctx context.Context, results []*hive.AssignmentResult) error {
 	// language=MariaDB
 	const stmt = `INSERT INTO %s (item_id, found_t, last_update, updates)
 VALUES (:item_id, :found_t, :last_update, :updates)

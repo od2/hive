@@ -7,9 +7,9 @@ import (
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/rs/xid"
+	"go.od2.network/hive-api"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/token"
-	"go.od2.network/hive/pkg/types"
 )
 
 // Handler implements the management API.
@@ -17,11 +17,11 @@ type Handler struct {
 	DB     *sql.DB
 	Signer token.Signer
 
-	types.UnimplementedManagementServer
+	hive.UnimplementedManagementServer
 }
 
 // CreateWorkerToken generates a new, authorized worker token.
-func (h *Handler) CreateWorkerToken(ctx context.Context, req *types.CreateWorkerTokenRequest) (*types.WorkerToken, error) {
+func (h *Handler) CreateWorkerToken(ctx context.Context, req *hive.CreateWorkerTokenRequest) (*hive.WorkerToken, error) {
 	user, err := auth.WebFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -56,6 +56,6 @@ func (h *Handler) CreateWorkerToken(ctx context.Context, req *types.CreateWorker
 		return nil, fmt.Errorf("failed to insert auth token to DB: %w", err)
 	}
 	// Return token.
-	result := &types.WorkerToken{Token: token.Marshal(signedPayload)}
+	result := &hive.WorkerToken{Token: token.Marshal(signedPayload)}
 	return result, nil
 }

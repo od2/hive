@@ -12,8 +12,8 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v8"
+	"go.od2.network/hive-api"
 	"go.od2.network/hive/pkg/topology"
-	"go.od2.network/hive/pkg/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -726,7 +726,7 @@ return count
 `
 
 // EvalAck acknowledges a bunch of in-flight Kafka messages by their offsets for a worker.
-func (r *RedisClient) EvalAck(ctx context.Context, worker int64, results []*types.AssignmentReport) (uint, error) {
+func (r *RedisClient) EvalAck(ctx context.Context, worker int64, results []*hive.AssignmentReport) (uint, error) {
 	keys := []string{
 		r.PartitionKeys.WorkerQueue(worker),
 		r.PartitionKeys.Results,
@@ -792,7 +792,7 @@ type Session struct {
 // Run starts a blocking loop that sends all session messages to a Go channel.
 // While it's running the session is kept alive by refreshing it in the background.
 // This method does not close the channel after returning.
-func (s *Session) Run(ctx context.Context, assignmentsC chan<- []*types.Assignment) error {
+func (s *Session) Run(ctx context.Context, assignmentsC chan<- []*hive.Assignment) error {
 	for ctx.Err() == nil {
 		assignments, err := s.step(ctx)
 		if err != nil {
@@ -811,7 +811,7 @@ func (s *Session) Run(ctx context.Context, assignmentsC chan<- []*types.Assignme
 	return ctx.Err()
 }
 
-func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
+func (s *Session) step(ctx context.Context) ([]*hive.Assignment, error) {
 	// Blocking read message batch from Redis group.
 	streams, readGroupErr := s.Redis.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    "main",
@@ -839,7 +839,7 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 	} else if len(streams) != 1 {
 		return nil, fmt.Errorf("read from unexpected number of streams: %d", len(streams))
 	}
-	assignments := make([]*types.Assignment, len(streams[0].Messages))
+	assignments := make([]*hive.Assignment, len(streams[0].Messages))
 	for i, msg := range streams[0].Messages {
 		idParts := strings.SplitN(msg.ID, "-", 2)
 		if len(idParts) != 2 {
@@ -855,12 +855,12 @@ func (s *Session) step(ctx context.Context) ([]*types.Assignment, error) {
 		} else if itemID == "" {
 			return nil, fmt.Errorf("empty item ID for offset %d", offset)
 		}
-		assignments[i] = &types.Assignment{
-			Locator: &types.ItemLocator{
+		assignments[i] = &hive.Assignment{
+			Locator: &hive.ItemLocator{
 				Collection: s.Collection.Name,
 				Id:         itemID,
 			},
-			KafkaPointer: &types.KafkaPointer{
+			KafkaPointer: &hive.KafkaPointer{
 				Partition: s.KafkaPartition,
 				Offset:    offset,
 			},

@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"go.od2.network/hive-api"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/topology/redisshard"
-	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -26,7 +26,7 @@ type Streamer struct {
 	Factory  redisshard.Factory
 	Log      *zap.Logger
 
-	types.UnimplementedAssignmentsServer
+	hive.UnimplementedAssignmentsServer
 }
 
 func (s *Streamer) getRedis(collection string) (*RedisClient, error) {
@@ -49,8 +49,8 @@ func (s *Streamer) getRedis(collection string) (*RedisClient, error) {
 // OpenAssignmentsStream creates a new njobs session.
 func (s *Streamer) OpenAssignmentsStream(
 	ctx context.Context,
-	req *types.OpenAssignmentsStreamRequest,
-) (*types.OpenAssignmentsStreamResponse, error) {
+	req *hive.OpenAssignmentsStreamRequest,
+) (*hive.OpenAssignmentsStreamResponse, error) {
 	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func (s *Streamer) OpenAssignmentsStream(
 	}
 	s.Log.Info("Success OpenAssignmentsStream()",
 		zap.Int64("worker", worker.WorkerID), zap.Int64("session", session))
-	return &types.OpenAssignmentsStreamResponse{
+	return &hive.OpenAssignmentsStreamResponse{
 		StreamId: session,
 	}, nil
 }
@@ -74,8 +74,8 @@ func (s *Streamer) OpenAssignmentsStream(
 // CloseAssignmentsStream halts the message stream making the worker shut down.
 func (s *Streamer) CloseAssignmentsStream(
 	ctx context.Context,
-	req *types.CloseAssignmentsStreamRequest,
-) (*types.CloseAssignmentsStreamResponse, error) {
+	req *hive.CloseAssignmentsStreamRequest,
+) (*hive.CloseAssignmentsStreamResponse, error) {
 	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -89,14 +89,14 @@ func (s *Streamer) CloseAssignmentsStream(
 	}
 	s.Log.Info("Success CloseAssignmentsStream()",
 		zap.Int64("worker", worker.WorkerID), zap.Int64("session", req.StreamId))
-	return &types.CloseAssignmentsStreamResponse{}, nil
+	return &hive.CloseAssignmentsStreamResponse{}, nil
 }
 
 // WantAssignments adds more quota to the worker stream.
 func (s *Streamer) WantAssignments(
 	ctx context.Context,
-	req *types.WantAssignmentsRequest,
-) (*types.WantAssignmentsResponse, error) {
+	req *hive.WantAssignmentsRequest,
+) (*hive.WantAssignmentsResponse, error) {
 	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func (s *Streamer) WantAssignments(
 	if err != nil {
 		return nil, fmt.Errorf("failed to run addSessionQuota: %w", err)
 	}
-	return &types.WantAssignmentsResponse{
+	return &hive.WantAssignmentsResponse{
 		Watermark:      int32(newQuota),
 		AddedWatermark: int32(newQuota), // TODO Check if that's the actual number added
 	}, nil
@@ -121,8 +121,8 @@ func (s *Streamer) WantAssignments(
 // SurrenderAssignments tells the server to reset all pending assignments.
 func (s *Streamer) SurrenderAssignments(
 	ctx context.Context,
-	req *types.SurrenderAssignmentsRequest,
-) (*types.SurrenderAssignmentsResponse, error) {
+	req *hive.SurrenderAssignmentsRequest,
+) (*hive.SurrenderAssignmentsResponse, error) {
 	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (s *Streamer) SurrenderAssignments(
 	if err != nil {
 		return nil, fmt.Errorf("failed to run resetSessionQuota: %w", err)
 	}
-	return &types.SurrenderAssignmentsResponse{
+	return &hive.SurrenderAssignmentsResponse{
 		RemovedWatermark: int32(removedQuota),
 	}, nil
 }
@@ -144,8 +144,8 @@ func (s *Streamer) SurrenderAssignments(
 // that are not delivered to the client yet, but which are queued for the near future.
 func (s *Streamer) GetPendingAssignmentsCount(
 	ctx context.Context,
-	req *types.GetPendingAssignmentsCountRequest,
-) (*types.PendingAssignmentsCount, error) {
+	req *hive.GetPendingAssignmentsCountRequest,
+) (*hive.PendingAssignmentsCount, error) {
 	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -163,13 +163,13 @@ func (s *Streamer) GetPendingAssignmentsCount(
 	} else if err != nil {
 		return nil, err
 	}
-	return &types.PendingAssignmentsCount{Watermark: int32(count)}, nil
+	return &hive.PendingAssignmentsCount{Watermark: int32(count)}, nil
 }
 
 // StreamAssignments sends task assignments from the server to the client.
 func (s *Streamer) StreamAssignments(
-	req *types.StreamAssignmentsRequest,
-	outStream types.Assignments_StreamAssignmentsServer,
+	req *hive.StreamAssignmentsRequest,
+	outStream hive.Assignments_StreamAssignmentsServer,
 ) error {
 	ctx := outStream.Context()
 	ctx, cancel := context.WithCancel(ctx)
@@ -191,7 +191,7 @@ func (s *Streamer) StreamAssignments(
 		return fmt.Errorf("failed to check if session exists: %w", zscoreErr)
 	}
 	// Create new Redis Streams consumer session.
-	assignmentsC := make(chan []*types.Assignment)
+	assignmentsC := make(chan []*hive.Assignment)
 	session := Session{
 		RedisClient: rc,
 		Worker:      worker.WorkerID,
@@ -215,7 +215,7 @@ func (s *Streamer) StreamAssignments(
 			return fmt.Errorf("session terminated: %w", sessionErr)
 		case batch := <-assignmentsC:
 			log.Info("Delivering assignments", zap.Int("num_assignments", len(batch)))
-			if err := outStream.Send(&types.AssignmentBatch{Assignments: batch}); err != nil {
+			if err := outStream.Send(&hive.AssignmentBatch{Assignments: batch}); err != nil {
 				return err
 			}
 		}
@@ -225,8 +225,8 @@ func (s *Streamer) StreamAssignments(
 // ReportAssignments reports about completed tasks.
 func (s *Streamer) ReportAssignments(
 	ctx context.Context,
-	req *types.ReportAssignmentsRequest,
-) (*types.ReportAssignmentsResponse, error) {
+	req *hive.ReportAssignmentsRequest,
+) (*hive.ReportAssignmentsResponse, error) {
 	worker, err := auth.WorkerFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -243,5 +243,5 @@ func (s *Streamer) ReportAssignments(
 		zap.Int64("worker", worker.WorkerID),
 		zap.Int("num_assignments", len(req.Reports)),
 		zap.Uint("num_acknowledged", count))
-	return &types.ReportAssignmentsResponse{Acknowledged: int64(count)}, nil
+	return &hive.ReportAssignmentsResponse{Acknowledged: int64(count)}, nil
 }

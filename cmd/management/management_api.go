@@ -4,11 +4,11 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.od2.network/hive-api"
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/management"
 	"go.od2.network/hive/pkg/token"
-	"go.od2.network/hive/pkg/types"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -52,7 +52,7 @@ func Run(
 		grpc.StreamInterceptor(interceptor.Stream()),
 	)
 	// Assemble handlers
-	types.RegisterManagementServer(server, &management.Handler{
+	hive.RegisterManagementServer(server, &management.Handler{
 		DB:     db.DB,
 		Signer: signer,
 	})

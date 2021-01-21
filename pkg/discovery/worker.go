@@ -10,10 +10,10 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
+	"go.od2.network/hive-api"
 	"go.od2.network/hive/pkg/dedup"
 	"go.od2.network/hive/pkg/items"
 	"go.od2.network/hive/pkg/topology"
-	"go.od2.network/hive/pkg/types"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/metric"
@@ -98,7 +98,7 @@ func (s *session) nextBatch() (bool, error) {
 	timer := time.NewTimer(s.MaxDelay)
 	defer timer.Stop()
 	// Read message batch from Kafka.
-	var pointers []*types.ItemPointer
+	var pointers []*hive.ItemPointer
 	var offset int64
 readLoop:
 	for {
@@ -111,7 +111,7 @@ readLoop:
 				return false, nil
 			}
 			offset = msg.Offset
-			pointer := new(types.ItemPointer)
+			pointer := new(hive.ItemPointer)
 			if err := proto.Unmarshal(msg.Value, pointer); err != nil {
 				return false, fmt.Errorf("invalid Protobuf from Kafka: %w", err)
 			}
@@ -137,9 +137,9 @@ readLoop:
 	if err != nil {
 		return false, fmt.Errorf("failed to dedup items: %w", err)
 	}
-	pointers = make([]*types.ItemPointer, len(dedupItems))
+	pointers = make([]*hive.ItemPointer, len(dedupItems))
 	for i, dedupItem := range dedupItems {
-		pointers[i] = dedupItem.(*types.ItemPointer)
+		pointers[i] = dedupItem.(*hive.ItemPointer)
 	}
 	s.Log.Debug("Deduped batch", zap.Int("dedup_count", len(pointers)))
 	if len(pointers) > 0 {

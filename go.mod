@@ -19,13 +19,14 @@ require (
 	github.com/spf13/cobra v1.1.1
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
+	go.od2.network/hive-api v0.0.1
+	go.od2.network/hive-worker v0.0.1
 	go.opentelemetry.io/otel v0.16.0
 	go.opentelemetry.io/otel/exporters/metric/prometheus v0.16.0
 	go.uber.org/fx v1.13.1
 	go.uber.org/zap v1.16.0
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	google.golang.org/grpc v1.35.0
-	google.golang.org/protobuf v1.25.0
 )
 
 // https://github.com/pelletier/go-toml/pull/464

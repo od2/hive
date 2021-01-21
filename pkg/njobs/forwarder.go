@@ -11,8 +11,8 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"go.od2.network/hive-api"
 	"go.od2.network/hive/pkg/topology"
-	"go.od2.network/hive/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -82,13 +82,13 @@ func (r *forwarder) step(ctx context.Context) error {
 		if !ok {
 			return fmt.Errorf("empty item ID: %s", msg.ID)
 		}
-		result := types.AssignmentResult{
-			Report: &types.AssignmentReport{
-				Status: types.TaskStatus(statusEnum),
+		result := hive.AssignmentResult{
+			Report: &hive.AssignmentReport{
+				Status: hive.TaskStatus(statusEnum),
 			},
 			WorkerId:   workerID,
 			FinishTime: ptypes.TimestampNow(),
-			Locator: &types.ItemLocator{
+			Locator: &hive.ItemLocator{
 				Collection: topology.CollectionOfTopic(r.Topic),
 				Id:         item,
 			},

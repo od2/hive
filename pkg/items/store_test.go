@@ -10,8 +10,8 @@ import (
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.od2.network/hive-api"
 	"go.od2.network/hive/pkg/mariadbtest"
-	"go.od2.network/hive/pkg/types"
 )
 
 func TestItemStore(t *testing.T) {
@@ -33,25 +33,25 @@ func TestItemStore(t *testing.T) {
 	require.NoError(t, itemStore.CreateTable(ctx))
 	t.Log("Created table", itemStore.TableName)
 	// Insert items the first time
-	require.NoError(t, itemStore.InsertDiscovered(ctx, []*types.ItemPointer{
+	require.NoError(t, itemStore.InsertDiscovered(ctx, []*hive.ItemPointer{
 		{
-			Dst:       &types.ItemLocator{Id: "1"},
+			Dst:       &hive.ItemLocator{Id: "1"},
 			Timestamp: &timestamp.Timestamp{Seconds: 3},
 		},
 		{
-			Dst:       &types.ItemLocator{Id: "2"},
+			Dst:       &hive.ItemLocator{Id: "2"},
 			Timestamp: &timestamp.Timestamp{Seconds: 3},
 		},
 	}))
 	t.Log("Newly discovered: 1, 2")
 	// Insert items again
-	require.NoError(t, itemStore.InsertDiscovered(ctx, []*types.ItemPointer{
+	require.NoError(t, itemStore.InsertDiscovered(ctx, []*hive.ItemPointer{
 		{
-			Dst:       &types.ItemLocator{Id: "2"},
+			Dst:       &hive.ItemLocator{Id: "2"},
 			Timestamp: &timestamp.Timestamp{Seconds: 5},
 		},
 		{
-			Dst:       &types.ItemLocator{Id: "3"},
+			Dst:       &hive.ItemLocator{Id: "3"},
 			Timestamp: &timestamp.Timestamp{Seconds: 10},
 		},
 	}))
@@ -63,21 +63,21 @@ func TestItemStore(t *testing.T) {
 		{ItemID: "3", FoundT: time.Unix(10, 0)},
 	}, scanItemStore(t, itemStore))
 	// Push a batch of task results.
-	require.NoError(t, itemStore.PushAssignmentResults(ctx, []*types.AssignmentResult{
+	require.NoError(t, itemStore.PushAssignmentResults(ctx, []*hive.AssignmentResult{
 		{
-			Locator:    &types.ItemLocator{Id: "2"},
+			Locator:    &hive.ItemLocator{Id: "2"},
 			FinishTime: &timestamp.Timestamp{Seconds: 3},
 		},
 		{
-			Locator:    &types.ItemLocator{Id: "2"},
+			Locator:    &hive.ItemLocator{Id: "2"},
 			FinishTime: &timestamp.Timestamp{Seconds: 4},
 		},
 		{
-			Locator:    &types.ItemLocator{Id: "3"},
+			Locator:    &hive.ItemLocator{Id: "3"},
 			FinishTime: &timestamp.Timestamp{Seconds: 4},
 		},
 		{
-			Locator:    &types.ItemLocator{Id: "4"},
+			Locator:    &hive.ItemLocator{Id: "4"},
 			FinishTime: &timestamp.Timestamp{Seconds: 23},
 		},
 	}))

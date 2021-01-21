@@ -17,6 +17,8 @@ import (
 	"github.com/pelletier/go-toml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.od2.network/hive-api"
+	"go.od2.network/hive-worker"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/redistest"
@@ -24,8 +26,6 @@ import (
 	"go.od2.network/hive/pkg/token"
 	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/topology/redisshard"
-	"go.od2.network/hive/pkg/types"
-	"go.od2.network/hive/pkg/worker"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
@@ -215,7 +215,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 		grpc.UnaryInterceptor(interceptor.Unary()),
 		grpc.StreamInterceptor(interceptor.Stream()),
 	)
-	types.RegisterAssignmentsServer(server, streamer)
+	hive.RegisterAssignmentsServer(server, streamer)
 	// Connect to Redis.
 	return &benchStack{
 		// Environment
@@ -345,14 +345,14 @@ type noopHandler struct {
 }
 
 // WorkAssignment does nothing and returns TaskStatus_SUCCESS.
-func (n *noopHandler) WorkAssignment(context.Context, *types.Assignment) types.TaskStatus {
+func (n *noopHandler) WorkAssignment(context.Context, *hive.Assignment) hive.TaskStatus {
 	if atomic.AddInt64(&n.assigns, 1) > int64(n.opts.Assigns) {
 		n.cancel()
 	}
-	return types.TaskStatus_SUCCESS
+	return hive.TaskStatus_SUCCESS
 }
 
-func (stack *benchStack) newClient(workerID int64) (types.AssignmentsClient, io.Closer) {
+func (stack *benchStack) newClient(workerID int64) (hive.AssignmentsClient, io.Closer) {
 	dialer := func(context.Context, string) (net.Conn, error) {
 		return stack.listener.Dial()
 	}
@@ -371,7 +371,7 @@ func (stack *benchStack) newClient(workerID int64) (types.AssignmentsClient, io.
 		grpc.WithInsecure(),
 		grpc.WithPerRPCCredentials(&workerCredentials))
 	require.NoError(stack.T, err, "failed to connect to gRPC")
-	return types.NewAssignmentsClient(conn), conn
+	return hive.NewAssignmentsClient(conn), conn
 }
 
 type simpleTokenBackend struct{}
