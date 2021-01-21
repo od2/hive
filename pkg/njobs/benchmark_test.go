@@ -365,7 +365,7 @@ func (stack *benchStack) newClient(workerID int64) (hive.AssignmentsClient, io.C
 	binary.BigEndian.PutUint64(payload.ID[:], uint64(workerID))
 	sp, err := stack.signer.Sign(payload)
 	require.NoError(stack.T, err)
-	workerCredentials := auth.WorkerCredentials{Token: token.Marshal(sp)}
+	workerCredentials := hive.WorkerCredentials{Token: token.Marshal(sp)}
 	conn, err := grpc.DialContext(stack.ctx, "bufnet",
 		grpc.WithContextDialer(dialer),
 		grpc.WithInsecure(),

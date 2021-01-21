@@ -13,6 +13,7 @@ Hive is compatible with Vitess for when horizontal scalability (sharding) is req
 Management tables hold information about the system itself (authentication etc).
 
 *Tables*:
+
 - `auth_tokens`: The auth token identifiers of workers.
 
 ### Collections
@@ -28,15 +29,16 @@ Kafka is the primary store for any kind of event logs and pipelines.
 Kafka is horizontally scalable itself, by sharding event logs into partitions.
 
 _Topics_:
+
 * `hive.<namespace>.<collection>.tasks`: Scraping task queue
-  * Producer: `discovery.Worker`
-  * Consumer: `njobs.Assigner`
+    * Producer: `discovery.Worker`
+    * Consumer: `njobs.Assigner`
 * `hive.<namespace>.<collection>.discovered`: Reports of newly discovered items
-  * Producer: `njobs.Streamer`
-  * Consumer: `discovery.Worker`
+    * Producer: `njobs.Streamer`
+    * Consumer: `discovery.Worker`
 * `hive.<namespace>.<collection>.results`: Scraping result reports
-  * Producer: `njobs.ResultForwarder`
-  * Consumer: `reporter.Worker`
+    * Producer: `njobs.ResultForwarder`
+    * Consumer: `reporter.Worker`
 
 ## Redis
 

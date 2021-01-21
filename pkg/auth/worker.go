@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"go.od2.network/hive-api"
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/token"
 	"go.uber.org/zap"
@@ -12,25 +13,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
-
-// MDAuthorization is the authorization metadata key.
-const MDAuthorization = "authorization"
-
-// WorkerCredentials represents client auth.
-type WorkerCredentials struct {
-	Token string
-}
-
-// RequireTransportSecurity returns false, because we slapped Envoy in front of it.
-func (a *WorkerCredentials) RequireTransportSecurity() bool {
-	return false
-}
-
-// GetRequestMetadata fetches the authentication gRPC metadata.
-func (a *WorkerCredentials) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
-	meta := map[string]string{MDAuthorization: a.Token}
-	return meta, nil
-}
 
 // WorkerAuthInterceptor is a gRPC server auth interceptor.
 type WorkerAuthInterceptor struct {
@@ -46,7 +28,7 @@ func (w *WorkerAuthInterceptor) intercept(ctx context.Context) (context.Context,
 	if !ok {
 		return ctx, fmt.Errorf("missing metadata on request")
 	}
-	authVals := md.Get(MDAuthorization)
+	authVals := md.Get(hive.MDAuthorization)
 	if len(authVals) != 1 {
 		return ctx, status.Error(codes.Unauthenticated, "missing auth header")
 	}
