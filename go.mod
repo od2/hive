@@ -12,7 +12,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jmoiron/sqlx v1.2.1-0.20201120164427-00c6e74d816a
 	github.com/ory/dockertest/v3 v3.6.3
-	github.com/pelletier/go-toml v1.8.1
+	github.com/pelletier/go-toml v1.8.2-0.20210125133150-3430b0f08615
 	github.com/prometheus/client_golang v1.9.0
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
 	github.com/rs/xid v1.2.1
@@ -28,6 +28,3 @@ require (
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	google.golang.org/grpc v1.35.0
 )
-
-// https://github.com/pelletier/go-toml/pull/464
-replace github.com/pelletier/go-toml => github.com/terorie/go-toml v1.8.2-0.20210118184423-69117aeb7d8a
