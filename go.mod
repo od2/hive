@@ -6,7 +6,7 @@ require (
 	github.com/Shopify/sarama v1.27.2
 	github.com/cenkalti/backoff/v4 v4.1.0
 	github.com/deathowl/go-metrics-prometheus v0.0.0-20200518174047-74482eab5bfb
-	github.com/go-redis/redis/v8 v8.4.9
+	github.com/go-redis/redis/v8 v8.4.11
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/golang/protobuf v1.4.3
 	github.com/hashicorp/golang-lru v0.5.4
