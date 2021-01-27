@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/rs/xid"
 	"github.com/spf13/cobra"
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/pkg/authgw"
@@ -25,78 +23,18 @@ func init() {
 	Cmd.AddCommand(&workerCmd)
 }
 
-var workerTokenCmd = cobra.Command{
-	Use:   "token",
-	Short: "Manage worker tokens",
-}
-
-func init() {
-	workerCmd.AddCommand(&workerTokenCmd)
-}
-
-var workerTokenCreateCmd = cobra.Command{
-	Use:   "create <worker>",
-	Short: "Create worker token",
-	Args:  cobra.ExactArgs(1),
-	Run:   providers.NewCmd(runWorkerTokenCreate),
-}
-
-func init() {
-	workerTokenCmd.AddCommand(&workerTokenCreateCmd)
-}
-
-func runWorkerTokenCreate(
-	args []string,
-	db *sqlx.DB,
-	signer token.Signer,
-) {
-	workerStr := args[0]
-	workerID, err := strconv.ParseInt(workerStr, 10, 64)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Invalid worker ID:", workerID)
-		os.Exit(1)
-	}
-	// TODO Duplicate from management API
-	id := xid.New()
-	ts := time.Now().Add(365 * 24 * time.Hour)
-	exp, err := token.TimeToExp(ts)
-	if err != nil {
-		panic(err)
-	}
-	payload := token.Payload{
-		Exp: exp,
-	}
-	copy(payload.ID[:], id[:])
-	signedPayload, err := signer.Sign(payload)
-	if err != nil {
-		panic(err)
-	}
-	_, err = db.ExecContext(context.Background(), `
-		INSERT INTO auth_tokens (id, worker_id, expires_at) VALUES (?, ?, ?);`,
-		id[:], workerID, ts)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create token:", err)
-		os.Exit(1)
-	}
-	fmt.Println(token.Marshal(signedPayload))
-}
-
-var workerTokenVerifyCmd = cobra.Command{
-	Use:   "verify <token>",
+var workerVerifyTokenCmd = cobra.Command{
+	Use:   "verify_token <token>",
 	Short: "Verify worker token",
 	Args:  cobra.ExactArgs(1),
-	Run:   providers.NewCmd(runWorkerTokenVerify),
+	Run:   providers.NewCmd(runWorkerVerifyToken),
 }
 
 func init() {
-	workerTokenCmd.AddCommand(&workerTokenVerifyCmd)
+	workerCmd.AddCommand(&workerVerifyTokenCmd)
 }
 
-func runWorkerTokenVerify(
-	args []string,
-	db *sqlx.DB,
-	signer token.Signer,
-) {
+func runWorkerVerifyToken(args []string, db *sqlx.DB, signer token.Signer) {
 	authToken := args[0]
 	signedPayload := token.Unmarshal(authToken)
 	if signedPayload == nil {
@@ -108,7 +46,7 @@ func runWorkerTokenVerify(
 		return
 	}
 	authgwDB := authgw.Database{DB: db.DB}
-	tokenInfo, err := authgwDB.LookupToken(context.Background(), signedPayload.Payload.ID)
+	tokenInfo, err := authgwDB.LookupToken(context.Background(), signedPayload.ID)
 	if errors.Is(err, authgw.ErrUnknown) {
 		fmt.Println("REJECT: Unknown token")
 		return

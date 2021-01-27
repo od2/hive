@@ -14,20 +14,18 @@ var macSecret = [32]byte{
 	0x17, 0xde, 0xe3, 0xe1, 0xdb, 0x92, 0x6f, 0x16,
 }
 
-var payload1 = Payload{
-	Exp: 8424000, // 2020-04-07T12:00:00Z
-	ID: [12]byte{
-		0x28, 0xe6, 0xb8, 0x85,
-		0x38, 0xc2, 0x3e, 0xaf,
-		0x20, 0x21, 0x4a, 0xfe,
-	},
+var id1 = ID{
+	0x28, 0xe6, 0xb8, 0x85,
+	0x38, 0xc2, 0x3e, 0xaf,
+	0x20, 0x21, 0x4a, 0xfe,
+	0x88, 0x94, 0x77, 0x4f,
 }
 
-var validToken1 = "HCwcDj-X8rZTPxW1F-p17H1kAgIpAKOa4hTjCPq8gIUr-"
+var validToken1 = "HCzSGK1WSf4OlRQzcxk0uFwYo5riFOMI-ryAhSv6IlHdP"
 
 func TestMarshal(t *testing.T) {
 	signer := NewSimpleSigner(&macSecret)
-	signedPayload := signer.SignNoErr(payload1)
+	signedPayload := signer.SignNoErr(id1)
 	token := Marshal(&signedPayload)
 	assert.Equal(t, validToken1, token)
 }
@@ -42,10 +40,10 @@ func TestUnmarshal(t *testing.T) {
 		signedPayload := Unmarshal(validToken1)
 		require.NotNil(t, signedPayload)
 		assert.Equal(t, [16]byte{
-			0x07, 0x03, 0x8f, 0xe5, 0xfc, 0xad, 0x94, 0xcf,
-			0xc5, 0x6d, 0x45, 0xfa, 0x9d, 0x7b, 0x1f, 0x59,
+			0x34, 0x86, 0x2b, 0x55, 0x92, 0x7f, 0x83, 0xa5,
+			0x45, 0x0c, 0xdc, 0xc6, 0x4d, 0x2e, 0x17, 0x06,
 		}, signedPayload.Tag)
-		assert.Equal(t, payload1, signedPayload.Payload)
+		assert.Equal(t, id1, signedPayload.ID)
 	})
 	t.Run("InvalidPrefix", func(t *testing.T) {
 		assert.Nil(t, Unmarshal("aNqg74enY1hmZOrzkSxrtknlNhPI1Vug2SRQmQXYgbF4"))

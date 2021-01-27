@@ -72,11 +72,6 @@ func (w *WebIdentityInterceptor) Stream() grpc.StreamServerInterceptor {
 	}
 }
 
-// WebContext describes the auth context of a request.
-type WebContext struct {
-	WorkerID int64
-}
-
 type webContextKey struct{}
 
 // WithWebContext returns a Go context with added web context.
