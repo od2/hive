@@ -89,13 +89,14 @@ func (h *Handler) ListWorkerTokens(ctx context.Context, _ *hive.ListWorkerTokens
 		var id []byte
 		var createdAt time.Time
 		var lastUsedAt sql.NullTime
-		if err := scan.Scan(
+		err := scan.Scan(
 			&id,
 			&workerToken.Description,
 			&workerToken.TokenBit,
 			&createdAt,
 			&lastUsedAt,
-		); err != nil {
+		)
+		if err != nil {
 			h.Log.Error("Failed to scan token", zap.Error(err))
 			return nil, status.Error(codes.Internal, "Failed to query tokens")
 		}
