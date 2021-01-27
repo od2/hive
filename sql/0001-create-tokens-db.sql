@@ -1,6 +1,6 @@
 CREATE TABLE auth_tokens
 (
-    id           BINARY(12)  NOT NULL PRIMARY KEY,
+    id           BINARY(16)  NOT NULL PRIMARY KEY,
     worker_id    BIGINT      NOT NULL,
     created_at   TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_used_at TIMESTAMP   NULL,

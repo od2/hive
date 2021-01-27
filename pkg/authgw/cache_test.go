@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rs/xid"
 	"github.com/stretchr/testify/assert"
 	"go.od2.network/hive/pkg/token"
 )
@@ -21,7 +20,7 @@ func TestCache_Invalidate(t *testing.T) {
 	}
 	// Write some random entries to the cache.
 	for i := 0; i < 64; i++ {
-		_, err := cache.LookupSlow(context.TODO(), token.ID(xid.New()))
+		_, err := cache.LookupSlow(context.TODO(), token.NewID())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,6 +78,6 @@ var emptySecret = [32]byte{}
 
 func randomSignedPayload() *token.SignedPayload {
 	signer := token.NewSimpleSigner(&emptySecret)
-	sp := signer.SignNoErr(token.ID(xid.New()))
+	sp := signer.SignNoErr(token.NewID())
 	return &sp
 }

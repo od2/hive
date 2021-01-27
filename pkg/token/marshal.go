@@ -8,7 +8,7 @@ func Marshal(sp *SignedPayload) string {
 }
 
 // MarshalledSize is the length of the token, marshalled.
-const MarshalledSize = len(EncodedPrefix) + 39
+const MarshalledSize = len(EncodedPrefix) + 44
 
 // EncodedPrefix is the hardcoded prefix of encoded signed tokens.
 const EncodedPrefix = "H"

@@ -2,6 +2,7 @@ package management
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -47,9 +48,9 @@ func TestHandler(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, createToken)
 		require.NotNil(t, createToken.Token)
-		t.Logf("Created token %d: %s", i, createToken.Key)
+		t.Logf("Created token %d ID %s: %s", i, createToken.Token.Id, createToken.Key)
 		assert.Len(t, createToken.Key, token.MarshalledSize)
-		assert.Len(t, createToken.Token.Id, 16)
+		assert.Len(t, createToken.Token.Id, 22)
 		assert.Equal(t, createToken.Token.Description, req.Description)
 		assert.Len(t, createToken.Token.TokenBit, 4)
 		assert.NotEqual(t, int64(0), createToken.Token.GetCreatedAt().Seconds)
@@ -57,6 +58,7 @@ func TestHandler(t *testing.T) {
 		tokenIDs[i] = createToken.Token.Id
 	}
 	// Delete one token.
+	t.Logf("Revoking token %s", tokenIDs[3])
 	revoke, err := h.RevokeWorkerToken(ctx, &hive.RevokeWorkerTokenRequest{TokenId: tokenIDs[3]})
 	require.NoError(t, err)
 	require.NotNil(t, revoke)
@@ -69,8 +71,13 @@ func TestHandler(t *testing.T) {
 	assert.False(t, revoke.GetFound())
 	t.Log("Confirmed token 3 does not exist")
 	// Mark one token as used.
-	lastUsedUpdate, err := h.DB.Exec("UPDATE auth_tokens SET last_used_at = ? WHERE id = FROM_BASE64(?);",
-		time.Now(), tokenIDs[0])
+	t.Log("Marking token as used", tokenIDs[0])
+	var tokenIDBin0 token.ID
+	n, err := base64.RawStdEncoding.Decode(tokenIDBin0[:], []byte(tokenIDs[0]))
+	require.NoError(t, err)
+	assert.Equal(t, 16, n)
+	lastUsedUpdate, err := h.DB.Exec("UPDATE auth_tokens SET last_used_at = ? WHERE id = ?;",
+		time.Now(), tokenIDBin0[:])
 	require.NoError(t, err)
 	lastUsedUpdateRows, err := lastUsedUpdate.RowsAffected()
 	require.NoError(t, err)
@@ -81,7 +88,7 @@ func TestHandler(t *testing.T) {
 	require.NotNil(t, tokenList)
 	assert.Len(t, tokenList.GetTokens(), 3)
 	for _, workerToken := range tokenList.GetTokens() {
-		assert.Len(t, workerToken.Id, 16)
+		assert.Len(t, workerToken.Id, 22)
 		assert.NotEmpty(t, workerToken.Description)
 		assert.Len(t, workerToken.TokenBit, 4)
 		assert.NotEqual(t, int64(0), workerToken.GetCreatedAt().Seconds)

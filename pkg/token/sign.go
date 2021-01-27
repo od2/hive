@@ -1,6 +1,7 @@
 package token
 
 import (
+	"crypto/rand"
 	"crypto/subtle"
 	"fmt"
 
@@ -8,7 +9,16 @@ import (
 )
 
 // ID is the binary representation of an auth token ID.
-type ID [12]byte
+type ID [16]byte
+
+// NewID creates a new, random ID.
+func NewID() (id ID) {
+	_, err := rand.Read(id[:])
+	if err != nil {
+		panic("failed to read random for token: " + err.Error())
+	}
+	return
+}
 
 // Signer creates or checks the MAC tag on signed payloads.
 type Signer interface {
@@ -69,7 +79,7 @@ type SignedPayload struct {
 }
 
 // SignedPayloadSize is the serialized size of SignedPayload.
-const SignedPayloadSize = 1 + 16 + 12
+const SignedPayloadSize = 1 + 16 + 16
 
 // SignedPayloadPrefix is a single byte prefix.
 const SignedPayloadPrefix = uint8(11)
@@ -79,7 +89,7 @@ func (sp *SignedPayload) Serialize() []byte {
 	b := make([]byte, SignedPayloadSize)
 	b[0] = SignedPayloadPrefix
 	copy(b[1:17], sp.Tag[:])
-	copy(b[17:29], sp.ID[:])
+	copy(b[17:33], sp.ID[:])
 	return b
 }
 
@@ -93,6 +103,6 @@ func (sp *SignedPayload) Deserialize(b []byte) error {
 		return fmt.Errorf("invalid prefix: %x", b[0])
 	}
 	copy(sp.Tag[:], b[1:17])
-	copy(sp.ID[:], b[17:29])
+	copy(sp.ID[:], b[17:33])
 	return nil
 }

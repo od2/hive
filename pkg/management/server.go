@@ -8,7 +8,6 @@ import (
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/rs/xid"
 	"go.od2.network/hive-api"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/token"
@@ -37,8 +36,8 @@ func (h *Handler) CreateWorkerToken(ctx context.Context, req *hive.CreateWorkerT
 		return nil, err
 	}
 	// Generate new globally unique auth token ID.
-	id := xid.New()
-	signedPayload, err := h.Signer.Sign(token.ID(id))
+	id := token.NewID()
+	signedPayload, err := h.Signer.Sign(id)
 	if err != nil {
 		h.Log.Error("Failed to sign payload", zap.Error(err), zap.Binary("token.payload", id[:]))
 		return nil, status.Error(codes.Internal, "Failed to sign payload")
@@ -57,7 +56,7 @@ func (h *Handler) CreateWorkerToken(ctx context.Context, req *hive.CreateWorkerT
 	result := &hive.CreateWorkerTokenResponse{
 		Key: tokenStr,
 		Token: &hive.WorkerToken{
-			Id:          base64.RawURLEncoding.EncodeToString(id[:]),
+			Id:          base64.RawStdEncoding.EncodeToString(id[:]),
 			Description: req.GetDescription(),
 			TokenBit:    tokenBit,
 			CreatedAt:   ptypes.TimestampNow(), // Not the real timestamp, but close enough.
@@ -131,7 +130,7 @@ func (h *Handler) RevokeWorkerToken(ctx context.Context, req *hive.RevokeWorkerT
 	// Decode the provided ID.
 	var id token.ID
 	n, b64Err := base64.RawStdEncoding.Decode(id[:], []byte(req.TokenId))
-	if b64Err != nil || n != 12 {
+	if b64Err != nil || n != len(id) {
 		return &hive.RevokeWorkerTokenResponse{Found: false}, nil
 	}
 	// Delete single token from user.

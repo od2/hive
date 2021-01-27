@@ -15,7 +15,6 @@ require (
 	github.com/pelletier/go-toml v1.8.2-0.20210125133150-3430b0f08615
 	github.com/prometheus/client_golang v1.9.0
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
-	github.com/rs/xid v1.2.1
 	github.com/spf13/cobra v1.1.1
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0

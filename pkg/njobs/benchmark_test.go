@@ -356,7 +356,7 @@ func (stack *benchStack) newClient(workerID int64) (hive.AssignmentsClient, io.C
 	dialer := func(context.Context, string) (net.Conn, error) {
 		return stack.listener.Dial()
 	}
-	var tokenID [12]byte
+	var tokenID [16]byte
 	// Put the worker ID into the first 8 bytes.
 	binary.BigEndian.PutUint64(tokenID[:], uint64(workerID))
 	sp, err := stack.signer.Sign(tokenID)
