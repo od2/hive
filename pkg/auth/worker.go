@@ -44,7 +44,7 @@ func (w *WorkerAuthInterceptor) intercept(ctx context.Context) (context.Context,
 		return ctx, status.Error(codes.Unauthenticated, "invalid auth token")
 	}
 	// Lookup token in DB.
-	tokenInfo, err := w.Backend.LookupToken(ctx, signedPayload.Payload.ID)
+	tokenInfo, err := w.Backend.LookupToken(ctx, signedPayload.ID)
 	if err == authgw.ErrUnknown {
 		w.Log.Debug("Rejecting unknown auth token")
 		return ctx, status.Error(codes.Unauthenticated, "invalid auth token")

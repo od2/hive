@@ -356,14 +356,10 @@ func (stack *benchStack) newClient(workerID int64) (hive.AssignmentsClient, io.C
 	dialer := func(context.Context, string) (net.Conn, error) {
 		return stack.listener.Dial()
 	}
-	exp, err := token.TimeToExp(time.Now().Add(16 * time.Hour))
-	require.NoError(stack.T, err)
-	payload := token.Payload{
-		Exp: exp,
-	}
+	var tokenID [12]byte
 	// Put the worker ID into the first 8 bytes.
-	binary.BigEndian.PutUint64(payload.ID[:], uint64(workerID))
-	sp, err := stack.signer.Sign(payload)
+	binary.BigEndian.PutUint64(tokenID[:], uint64(workerID))
+	sp, err := stack.signer.Sign(tokenID)
 	require.NoError(stack.T, err)
 	workerCredentials := hive.WorkerCredentials{Token: token.Marshal(sp)}
 	conn, err := grpc.DialContext(stack.ctx, "bufnet",
