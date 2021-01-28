@@ -30,7 +30,7 @@ func TestHandler(t *testing.T) {
 		Log:    log,
 	}
 	ctx := context.Background()
-	var user = auth.GitHubUser{ID: 123, Login: "terorie"}
+	var user = auth.WebIdentity{ID: 123, Name: "terorie"}
 	ctx = auth.WithWebContext(ctx, &user)
 	// Create table.
 	_, goFile, _, _ := runtime.Caller(0)

@@ -46,7 +46,7 @@ func Run(
 	signer token.Signer,
 ) {
 	// Assemble server with web auth
-	interceptor := auth.WebIdentityInterceptor{}
+	interceptor := auth.GitHubAuthInterceptor{}
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(interceptor.Unary()),
 		grpc.StreamInterceptor(interceptor.Stream()),

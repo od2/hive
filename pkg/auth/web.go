@@ -2,42 +2,59 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/google/go-github/v33/github"
+	"go.uber.org/zap"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-// WebIdentityInterceptor reads the identity of the web user
+// WebIdentity is the identity of a web user.
+type WebIdentity struct {
+	ID   int64
+	Name string
+}
+
+// GitHubAuthInterceptor reads the identity of the GitHub user
 // issuing requests from trusted metadata set by Envoy.
-type WebIdentityInterceptor struct{}
+// It uses GitHub OAuth 2.0 tokens through Bearer auth.
+type GitHubAuthInterceptor struct {
+	Log *zap.Logger
+}
 
-// MDUserIdentity is the user identity metadata key.
-const MDUserIdentity = "x-od2-user-identity"
-
-func (w *WebIdentityInterceptor) intercept(ctx context.Context) (context.Context, error) {
+func (w *GitHubAuthInterceptor) intercept(ctx context.Context) (context.Context, error) {
 	// Get the auth token from the gRPC request.
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ctx, fmt.Errorf("missing metadata on request")
 	}
-	identityVals := md.Get(MDUserIdentity)
+	identityVals := md.Get("Authorization")
 	if len(identityVals) != 1 {
 		return ctx, status.Error(codes.Unauthenticated, "missing or wrong number of identity metadata values")
 	}
-	authToken := identityVals[0]
-	user := new(GitHubUser)
-	if err := json.Unmarshal([]byte(authToken), user); err != nil {
-		return nil, err
+	authToken := oauth2.StaticTokenSource(&oauth2.Token{
+		AccessToken: strings.TrimPrefix(identityVals[0], "Bearer "),
+	})
+	client := github.NewClient(oauth2.NewClient(ctx, authToken))
+	githubUser, _, err := client.Users.Get(ctx, "")
+	if err != nil {
+		w.Log.Error("Invalid GitHub user", zap.Error(err))
+		return nil, status.Error(codes.Unauthenticated, "invalid GitHub user")
 	}
-	return WithWebContext(ctx, user), nil
+	identity := &WebIdentity{
+		ID:   githubUser.GetID(),
+		Name: githubUser.GetName(),
+	}
+	return WithWebContext(ctx, identity), nil
 }
 
 // Unary returns a gRPC unary server interceptor for authentication.
-func (w *WebIdentityInterceptor) Unary() grpc.UnaryServerInterceptor {
+func (w *GitHubAuthInterceptor) Unary() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req interface{},
@@ -53,7 +70,7 @@ func (w *WebIdentityInterceptor) Unary() grpc.UnaryServerInterceptor {
 }
 
 // Stream returns a gRPC stream server interceptor for authentication.
-func (w *WebIdentityInterceptor) Stream() grpc.StreamServerInterceptor {
+func (w *GitHubAuthInterceptor) Stream() grpc.StreamServerInterceptor {
 	return func(
 		srv interface{},
 		ss grpc.ServerStream,
@@ -75,13 +92,13 @@ func (w *WebIdentityInterceptor) Stream() grpc.StreamServerInterceptor {
 type webContextKey struct{}
 
 // WithWebContext returns a Go context with added web context.
-func WithWebContext(ctx context.Context, user *GitHubUser) context.Context {
+func WithWebContext(ctx context.Context, user *WebIdentity) context.Context {
 	return context.WithValue(ctx, webContextKey{}, user)
 }
 
 // WebFromContext returns the web user from the Go context.
-func WebFromContext(ctx context.Context) (*GitHubUser, error) {
-	authCtx, _ := ctx.Value(webContextKey{}).(*GitHubUser)
+func WebFromContext(ctx context.Context) (*WebIdentity, error) {
+	authCtx, _ := ctx.Value(webContextKey{}).(*WebIdentity)
 	if authCtx == nil {
 		return nil, fmt.Errorf("invalid auth context")
 	}
