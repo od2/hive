@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.od2.network/hive-api"
+	"go.od2.network/hive-api/worker"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/redistest"
 	"go.od2.network/hive/pkg/topology"
@@ -85,7 +86,7 @@ func TestNJobs(t *testing.T) {
 			})
 		}),
 	)
-	hive.RegisterAssignmentsServer(serv, &streamer)
+	worker.RegisterAssignmentsServer(serv, &streamer)
 	go serv.Serve(lis)
 	// Build assignments client.
 	dialer := func(context.Context, string) (net.Conn, error) {
@@ -94,7 +95,7 @@ func TestNJobs(t *testing.T) {
 	conn, err := grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(dialer), grpc.WithInsecure())
 	require.NoError(t, err)
 	defer conn.Close()
-	client := hive.NewAssignmentsClient(conn)
+	client := worker.NewAssignmentsClient(conn)
 
 	// Build mock Kafka consumer.
 	//consumer := mocks.NewConsumer(t, &sarama.Config{})
@@ -104,7 +105,7 @@ func TestNJobs(t *testing.T) {
 	defer cancel()
 
 	// Try consuming messages on non-existent session.
-	assignStream1, err := client.StreamAssignments(ctx, &hive.StreamAssignmentsRequest{
+	assignStream1, err := client.StreamAssignments(ctx, &worker.StreamAssignmentsRequest{
 		StreamId:   1,
 		Collection: topic,
 	})
@@ -118,7 +119,7 @@ func TestNJobs(t *testing.T) {
 	t.Logf("Started worker=%d session=%d", worker1, sessionID1)
 
 	// Allow 5 tasks.
-	res, err := client.WantAssignments(ctx, &hive.WantAssignmentsRequest{
+	res, err := client.WantAssignments(ctx, &worker.WantAssignmentsRequest{
 		StreamId:     sessionID1,
 		AddWatermark: 5,
 		Collection:   "test",
@@ -133,7 +134,7 @@ func TestNJobs(t *testing.T) {
 		redisWorkerKey(worker1)).Err(), "worker not activated")
 
 	// Check the pending assignment count.
-	pending1Res, err := client.GetPendingAssignmentsCount(ctx, &hive.GetPendingAssignmentsCountRequest{
+	pending1Res, err := client.GetPendingAssignmentsCount(ctx, &worker.GetPendingAssignmentsCountRequest{
 		StreamId:   sessionID1,
 		Collection: topic,
 	})
@@ -141,7 +142,7 @@ func TestNJobs(t *testing.T) {
 	assert.Equal(t, pending1Res.Watermark, int32(5))
 
 	// Check the pending assignment count for a non-existent session.
-	pending2Res, err := client.GetPendingAssignmentsCount(ctx, &hive.GetPendingAssignmentsCountRequest{
+	pending2Res, err := client.GetPendingAssignmentsCount(ctx, &worker.GetPendingAssignmentsCountRequest{
 		StreamId:   9999,
 		Collection: topic,
 	})
@@ -165,7 +166,7 @@ func TestNJobs(t *testing.T) {
 	require.Equal(t, int64(132), offset, "wrong tasks assigned")
 
 	// Try consuming messages on an existing session.
-	assignStream2, err := client.StreamAssignments(ctx, &hive.StreamAssignmentsRequest{
+	assignStream2, err := client.StreamAssignments(ctx, &worker.StreamAssignmentsRequest{
 		StreamId:   sessionID1,
 		Collection: topic,
 	})
@@ -194,7 +195,7 @@ func TestNJobs(t *testing.T) {
 			Status:       status,
 		}
 	}
-	_, err = client.ReportAssignments(ctx, &hive.ReportAssignmentsRequest{
+	_, err = client.ReportAssignments(ctx, &worker.ReportAssignmentsRequest{
 		Reports:    reports,
 		Collection: topic,
 	})

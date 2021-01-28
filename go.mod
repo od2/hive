@@ -19,8 +19,8 @@ require (
 	github.com/spf13/cobra v1.1.1
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
-	go.od2.network/hive-api v0.0.4
-	go.od2.network/hive-worker v0.0.2
+	go.od2.network/hive-api v0.2.0
+	go.od2.network/hive-worker v0.1.0
 	go.opentelemetry.io/otel v0.16.0
 	go.opentelemetry.io/otel/exporters/metric/prometheus v0.16.0
 	go.uber.org/fx v1.13.1

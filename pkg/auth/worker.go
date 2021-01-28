@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"go.od2.network/hive-api"
+	"go.od2.network/hive-api/worker"
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/token"
 	"go.uber.org/zap"
@@ -28,7 +28,7 @@ func (w *WorkerAuthInterceptor) intercept(ctx context.Context) (context.Context,
 	if !ok {
 		return ctx, fmt.Errorf("missing metadata on request")
 	}
-	authVals := md.Get(hive.MDAuthorization)
+	authVals := md.Get(worker.MDAuthorization)
 	if len(authVals) != 1 {
 		return ctx, status.Error(codes.Unauthenticated, "missing auth header")
 	}

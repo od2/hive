@@ -8,7 +8,7 @@ import (
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"go.od2.network/hive-api"
+	"go.od2.network/hive-api/web"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/token"
 	"go.uber.org/zap"
@@ -26,11 +26,11 @@ type Handler struct {
 	Signer token.Signer
 	Log    *zap.Logger
 
-	hive.UnimplementedManagementServer
+	web.UnimplementedWorkerTokensServer
 }
 
 // CreateWorkerToken generates a new, authorized worker token.
-func (h *Handler) CreateWorkerToken(ctx context.Context, req *hive.CreateWorkerTokenRequest) (*hive.CreateWorkerTokenResponse, error) {
+func (h *Handler) CreateWorkerToken(ctx context.Context, req *web.CreateWorkerTokenRequest) (*web.CreateWorkerTokenResponse, error) {
 	user, err := auth.WebFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -53,9 +53,9 @@ func (h *Handler) CreateWorkerToken(ctx context.Context, req *hive.CreateWorkerT
 		return nil, status.Error(codes.Internal, "Failed to create token")
 	}
 	// Return token.
-	result := &hive.CreateWorkerTokenResponse{
+	result := &web.CreateWorkerTokenResponse{
 		Key: tokenStr,
-		Token: &hive.WorkerToken{
+		Token: &web.WorkerToken{
 			Id:          base64.RawStdEncoding.EncodeToString(id[:]),
 			Description: req.GetDescription(),
 			TokenBit:    tokenBit,
@@ -67,13 +67,13 @@ func (h *Handler) CreateWorkerToken(ctx context.Context, req *hive.CreateWorkerT
 }
 
 // ListWorkerTokens returns a list of all worker tokens.
-func (h *Handler) ListWorkerTokens(ctx context.Context, _ *hive.ListWorkerTokensRequest) (*hive.ListWorkerTokensResponse, error) {
+func (h *Handler) ListWorkerTokens(ctx context.Context, _ *web.ListWorkerTokensRequest) (*web.ListWorkerTokensResponse, error) {
 	user, err := auth.WebFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 	// List all tokens from user.
-	res := new(hive.ListWorkerTokensResponse)
+	res := new(web.ListWorkerTokensResponse)
 	scan, err := h.DB.QueryContext(ctx,
 		`SELECT id, description, token_bit, created_at, last_used_at
          FROM auth_tokens WHERE worker_id = ?;`,
@@ -84,7 +84,7 @@ func (h *Handler) ListWorkerTokens(ctx context.Context, _ *hive.ListWorkerTokens
 	}
 	// Scan tokens.
 	for scan.Next() {
-		workerToken := new(hive.WorkerToken)
+		workerToken := new(web.WorkerToken)
 		var id []byte
 		var createdAt time.Time
 		var lastUsedAt sql.NullTime
@@ -122,7 +122,7 @@ func (h *Handler) ListWorkerTokens(ctx context.Context, _ *hive.ListWorkerTokens
 }
 
 // RevokeWorkerToken invalidates and deletes a worker token by ID.
-func (h *Handler) RevokeWorkerToken(ctx context.Context, req *hive.RevokeWorkerTokenRequest) (*hive.RevokeWorkerTokenResponse, error) {
+func (h *Handler) RevokeWorkerToken(ctx context.Context, req *web.RevokeWorkerTokenRequest) (*web.RevokeWorkerTokenResponse, error) {
 	user, err := auth.WebFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -131,7 +131,7 @@ func (h *Handler) RevokeWorkerToken(ctx context.Context, req *hive.RevokeWorkerT
 	var id token.ID
 	n, b64Err := base64.RawStdEncoding.Decode(id[:], []byte(req.TokenId))
 	if b64Err != nil || n != len(id) {
-		return &hive.RevokeWorkerTokenResponse{Found: false}, nil
+		return &web.RevokeWorkerTokenResponse{Found: false}, nil
 	}
 	// Delete single token from user.
 	execRes, err := h.DB.ExecContext(ctx,
@@ -145,11 +145,11 @@ func (h *Handler) RevokeWorkerToken(ctx context.Context, req *hive.RevokeWorkerT
 		h.Log.Error("Failed to check if deletion affected any rows", zap.Error(err))
 		return nil, status.Error(codes.Internal, "Failed to delete token")
 	}
-	return &hive.RevokeWorkerTokenResponse{Found: affected > 0}, nil
+	return &web.RevokeWorkerTokenResponse{Found: affected > 0}, nil
 }
 
 // RevokeAllWorkerTokens invalidates and deletes all tokens of a worker.
-func (h *Handler) RevokeAllWorkerTokens(ctx context.Context, _ *hive.RevokeAllWorkerTokensRequest) (*hive.RevokeAllWorkerTokensResponse, error) {
+func (h *Handler) RevokeAllWorkerTokens(ctx context.Context, _ *web.RevokeAllWorkerTokensRequest) (*web.RevokeAllWorkerTokensResponse, error) {
 	user, err := auth.WebFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -160,5 +160,5 @@ func (h *Handler) RevokeAllWorkerTokens(ctx context.Context, _ *hive.RevokeAllWo
 		h.Log.Error("Failed to delete tokens", zap.Error(err))
 		return nil, status.Error(codes.Internal, "Failed to delete tokens")
 	}
-	return &hive.RevokeAllWorkerTokensResponse{}, nil
+	return &web.RevokeAllWorkerTokensResponse{}, nil
 }

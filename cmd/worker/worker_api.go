@@ -4,7 +4,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.od2.network/hive-api"
+	"go.od2.network/hive-api/worker"
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/discovery"
@@ -52,7 +52,7 @@ func NewDiscoveryServer(
 	server *grpc.Server,
 	producer sarama.SyncProducer,
 ) {
-	hive.RegisterDiscoveryServer(server, &discovery.Handler{
+	worker.RegisterDiscoveryServer(server, &discovery.Handler{
 		Producer: producer,
 		Log:      log.Named("discovery"),
 	})
@@ -70,7 +70,7 @@ func NewAssignmentsServer(
 		Factory:  factory,
 		Log:      log.Named("worker"),
 	}
-	hive.RegisterAssignmentsServer(server, &streamer)
+	worker.RegisterAssignmentsServer(server, &streamer)
 }
 
 // Server registers the worker_api gRPC server to the lifecycle.

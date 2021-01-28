@@ -7,7 +7,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.od2.network/hive-api"
+	"go.od2.network/hive-api/web"
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/cachegc"
@@ -66,10 +66,11 @@ func Run(
 		grpc.StreamInterceptor(interceptor.Stream()),
 	)
 	// Assemble handlers
-	hive.RegisterManagementServer(server, &management.Handler{
+	handler := &management.Handler{
 		DB:     db.DB,
 		Signer: signer,
-	})
+	}
+	web.RegisterWorkerTokensServer(server, handler)
 	// Start listener
 	listen := providers.MustListen(log,
 		viper.GetString(ConfListenNet),

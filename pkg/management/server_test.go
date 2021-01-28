@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.od2.network/hive-api"
+	"go.od2.network/hive-api/web"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/mariadbtest"
 	"go.od2.network/hive/pkg/token"
@@ -41,7 +41,7 @@ func TestHandler(t *testing.T) {
 	// Create four tokens.
 	tokenIDs := make([]string, 4)
 	for i := 0; i < 4; i++ {
-		req := &hive.CreateWorkerTokenRequest{
+		req := &web.CreateWorkerTokenRequest{
 			Description: fmt.Sprintf("Token %d", i),
 		}
 		createToken, err := h.CreateWorkerToken(ctx, req)
@@ -59,13 +59,13 @@ func TestHandler(t *testing.T) {
 	}
 	// Delete one token.
 	t.Logf("Revoking token %s", tokenIDs[3])
-	revoke, err := h.RevokeWorkerToken(ctx, &hive.RevokeWorkerTokenRequest{TokenId: tokenIDs[3]})
+	revoke, err := h.RevokeWorkerToken(ctx, &web.RevokeWorkerTokenRequest{TokenId: tokenIDs[3]})
 	require.NoError(t, err)
 	require.NotNil(t, revoke)
 	assert.True(t, revoke.GetFound())
 	t.Log("Removed token 3")
 	// Revoke for revoked token should fail.
-	revoke, err = h.RevokeWorkerToken(ctx, &hive.RevokeWorkerTokenRequest{TokenId: tokenIDs[3]})
+	revoke, err = h.RevokeWorkerToken(ctx, &web.RevokeWorkerTokenRequest{TokenId: tokenIDs[3]})
 	require.NoError(t, err)
 	require.NotNil(t, revoke)
 	assert.False(t, revoke.GetFound())
@@ -83,7 +83,7 @@ func TestHandler(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), lastUsedUpdateRows)
 	// List tokens.
-	tokenList, err := h.ListWorkerTokens(ctx, &hive.ListWorkerTokensRequest{})
+	tokenList, err := h.ListWorkerTokens(ctx, &web.ListWorkerTokensRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, tokenList)
 	assert.Len(t, tokenList.GetTokens(), 3)
@@ -100,11 +100,11 @@ func TestHandler(t *testing.T) {
 	}
 	t.Log("Listed the existing tokens")
 	// Revoke all tokens.
-	_, err = h.RevokeAllWorkerTokens(ctx, &hive.RevokeAllWorkerTokensRequest{})
+	_, err = h.RevokeAllWorkerTokens(ctx, &web.RevokeAllWorkerTokensRequest{})
 	require.NoError(t, err)
 	t.Log("Revoked all tokens")
 	// List tokens (should be empty).
-	tokenList, err = h.ListWorkerTokens(ctx, &hive.ListWorkerTokensRequest{})
+	tokenList, err = h.ListWorkerTokens(ctx, &web.ListWorkerTokensRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, tokenList)
 	assert.Len(t, tokenList.GetTokens(), 0)

@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.od2.network/hive-api"
+	worker_api "go.od2.network/hive-api/worker"
 	"go.od2.network/hive-worker"
 	"go.od2.network/hive/pkg/auth"
 	"go.od2.network/hive/pkg/authgw"
@@ -215,7 +216,7 @@ func newBenchStack(t *testing.T, opts *benchOptions) *benchStack {
 		grpc.UnaryInterceptor(interceptor.Unary()),
 		grpc.StreamInterceptor(interceptor.Stream()),
 	)
-	hive.RegisterAssignmentsServer(server, streamer)
+	worker_api.RegisterAssignmentsServer(server, streamer)
 	// Connect to Redis.
 	return &benchStack{
 		// Environment
@@ -352,7 +353,7 @@ func (n *noopHandler) WorkAssignment(context.Context, *hive.Assignment) hive.Tas
 	return hive.TaskStatus_SUCCESS
 }
 
-func (stack *benchStack) newClient(workerID int64) (hive.AssignmentsClient, io.Closer) {
+func (stack *benchStack) newClient(workerID int64) (worker_api.AssignmentsClient, io.Closer) {
 	dialer := func(context.Context, string) (net.Conn, error) {
 		return stack.listener.Dial()
 	}
@@ -361,13 +362,13 @@ func (stack *benchStack) newClient(workerID int64) (hive.AssignmentsClient, io.C
 	binary.BigEndian.PutUint64(tokenID[:], uint64(workerID))
 	sp, err := stack.signer.Sign(tokenID)
 	require.NoError(stack.T, err)
-	workerCredentials := hive.WorkerCredentials{Token: token.Marshal(sp)}
+	workerCredentials := worker_api.Credentials{Token: token.Marshal(sp)}
 	conn, err := grpc.DialContext(stack.ctx, "bufnet",
 		grpc.WithContextDialer(dialer),
 		grpc.WithInsecure(),
 		grpc.WithPerRPCCredentials(&workerCredentials))
 	require.NoError(stack.T, err, "failed to connect to gRPC")
-	return hive.NewAssignmentsClient(conn), conn
+	return worker_api.NewAssignmentsClient(conn), conn
 }
 
 type simpleTokenBackend struct{}

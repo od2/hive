@@ -6,7 +6,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
-	"go.od2.network/hive-api"
+	"go.od2.network/hive-api/worker"
 	"go.od2.network/hive/pkg/topology"
 	"go.uber.org/zap"
 )
@@ -16,14 +16,14 @@ type Handler struct {
 	Producer sarama.SyncProducer
 	Log      *zap.Logger
 
-	hive.UnimplementedDiscoveryServer
+	worker.UnimplementedDiscoveryServer
 }
 
 // ReportDiscovered reports related found items while crawling.
 func (h *Handler) ReportDiscovered(
 	_ context.Context,
-	req *hive.ReportDiscoveredRequest,
-) (*hive.ReportDiscoveredResponse, error) {
+	req *worker.ReportDiscoveredRequest,
+) (*worker.ReportDiscoveredResponse, error) {
 	// TODO Mark worker in message
 	// TODO Verify collections
 	msgs := make([]*sarama.ProducerMessage, len(req.Pointers))
@@ -45,5 +45,5 @@ func (h *Handler) ReportDiscovered(
 	}
 	h.Log.Debug("Processed worker report", zap.Int("discover_count", len(msgs)))
 	// TODO Metrics
-	return &hive.ReportDiscoveredResponse{}, nil
+	return &worker.ReportDiscoveredResponse{}, nil
 }
