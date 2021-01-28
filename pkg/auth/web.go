@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v33/github"
+	"github.com/hashicorp/golang-lru/simplelru"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
@@ -24,7 +25,8 @@ type WebIdentity struct {
 // issuing requests from trusted metadata set by Envoy.
 // It uses GitHub OAuth 2.0 tokens through Bearer auth.
 type GitHubAuthInterceptor struct {
-	Log *zap.Logger
+	Cache simplelru.LRUCache
+	Log   *zap.Logger
 }
 
 func (w *GitHubAuthInterceptor) intercept(ctx context.Context) (context.Context, error) {

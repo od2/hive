@@ -1,12 +1,16 @@
 package management
 
 import (
+	"time"
+
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.od2.network/hive-api"
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/pkg/auth"
+	"go.od2.network/hive/pkg/cachegc"
 	"go.od2.network/hive/pkg/management"
 	"go.od2.network/hive/pkg/token"
 	"go.uber.org/fx"
@@ -46,7 +50,17 @@ func Run(
 	signer token.Signer,
 ) {
 	// Assemble server with web auth
-	interceptor := auth.GitHubAuthInterceptor{}
+	// TODO Make cache size configurable
+	// TODO Make cache entry lifetime configurable
+	authCache, err := lru.New(1024)
+	if err != nil {
+		panic(err.Error())
+	}
+	authCacheGC := cachegc.NewCache(authCache, time.Hour)
+	interceptor := auth.GitHubAuthInterceptor{
+		Cache: authCacheGC,
+		Log:   log.Named("auth"),
+	}
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(interceptor.Unary()),
 		grpc.StreamInterceptor(interceptor.Stream()),
