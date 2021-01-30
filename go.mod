@@ -27,5 +27,6 @@ require (
 	go.uber.org/zap v1.16.0
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
+	golang.org/x/tools v0.1.0 // indirect
 	google.golang.org/grpc v1.35.0
 )

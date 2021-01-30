@@ -1,4 +1,4 @@
-// Package subprocesstest helps running subprocesses as part of tests.
+// Package exectest helps running subprocesses as part of tests.
 //
 // Check the test files of this package for examples.
 package exectest
@@ -87,12 +87,14 @@ func (b *Background) Err() error {
 	return b.err
 }
 
+// PipeCapture prints each line to the test log.
 type PipeCapture struct {
 	TB     testing.TB
 	Prefix string
 	buf    bytes.Buffer
 }
 
+// Write captures a chunk of command output.
 func (w *PipeCapture) Write(buf []byte) (n int, err error) {
 	splits := bytes.Split(buf, []byte("\n"))
 	if len(splits) <= 1 {
@@ -109,6 +111,7 @@ func (w *PipeCapture) Write(buf []byte) (n int, err error) {
 	return len(buf), nil
 }
 
+// Flush writes out the remaining lines in the buffer.
 func (w *PipeCapture) Flush() {
 	buf := w.buf.String()
 	lines := strings.Split(buf, "\n")

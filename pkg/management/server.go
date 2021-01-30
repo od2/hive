@@ -169,6 +169,7 @@ func (h *Handler) RevokeAllWorkerTokens(ctx context.Context, _ *web.RevokeAllWor
 	return &web.RevokeAllWorkerTokensResponse{}, nil
 }
 
+// GetCollections returns the collections of the topology along with some stats.
 func (h *Handler) GetCollections(ctx context.Context, _ *web.GetCollectionsRequest) (*web.GetCollectionsResponse, error) {
 	// Determine current database name.
 	var dbName string
