@@ -21,7 +21,9 @@ type Backend interface {
 // from the fastest available backend.
 func Default(t testing.TB) Backend {
 	if SupportsSubprocess() {
+		t.Log("mariadbtest: MySQL server installed, using subprocess")
 		return NewSubprocess(t)
 	}
+	t.Log("mariadbtest: Falling back to Docker")
 	return NewDocker(t)
 }
