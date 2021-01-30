@@ -2,12 +2,12 @@ package mariadbtest
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"testing"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/jmoiron/sqlx"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/assert"
@@ -18,8 +18,11 @@ import (
 // and a local client authenticated and attached to the DB.
 type Docker struct {
 	Resource *dockertest.Resource
-	DB       *sqlx.DB
+	config   *mysql.Config
 }
+
+// Assert Docker implements Backend.
+var _ Backend = (*Docker)(nil)
 
 // NewDocker creates and starts a Docker test configuration.
 // It terminates the test if creation fails.
@@ -36,7 +39,7 @@ func NewDocker(t testing.TB) *Docker {
 		Repository: "mariadb",
 		Tag:        "10.3-focal",
 		Env: []string{
-			"MYSQL_DATABASE=hive",
+			"MYSQL_DATABASE=mariadbtest",
 			"MYSQL_USER=root",
 			"MYSQL_ROOT_PASSWORD=" + password,
 		},
@@ -47,20 +50,16 @@ func NewDocker(t testing.TB) *Docker {
 	})
 	require.NoError(t, err, "Creating MariaDB")
 	t.Log("Created MariaDB Docker container")
-	sqlConfig := mysql.Config{
-		User:   "root",
-		Passwd: password,
-		Net:    "tcp",
-		Addr:   "localhost:" + resource.GetPort("3306/tcp"),
-		DBName: "hive",
-
-		ParseTime:            true,
-		Loc:                  time.Local,
-		AllowNativePasswords: true,
-	}
+	sqlConfig := mysql.NewConfig()
+	sqlConfig.User = "root"
+	sqlConfig.Passwd = password
+	sqlConfig.Net = "tcp"
+	sqlConfig.Addr = "localhost:" + resource.GetPort("3306/tcp")
+	sqlConfig.DBName = "mariadbtest"
+	sqlConfig.AllowNativePasswords = true
 	dsn := sqlConfig.FormatDSN()
 	t.Log("Connecting to MySQL:", dsn)
-	db, err := sqlx.Open("mysql", dsn)
+	db, err := sql.Open("mysql", dsn)
 	require.NoError(t, err)
 	require.NoError(t, pool.Retry(func() error {
 		if err := db.Ping(); err != nil {
@@ -71,8 +70,21 @@ func NewDocker(t testing.TB) *Docker {
 	}), "Connection to MariaDB")
 	return &Docker{
 		Resource: resource,
-		DB:       db,
+		config:   sqlConfig,
 	}
+}
+
+// MySQLConfig returns the base config for connecting to Dockerized MySQL.
+func (m *Docker) MySQLConfig() *mysql.Config {
+	return m.config
+}
+
+// DB opens the specified database.
+// An empty string opens the default database.
+func (m *Docker) DB(name string) (*sql.DB, error) {
+	config := m.config
+	config.DBName = name
+	return sql.Open("mysql", config.FormatDSN())
 }
 
 // Close force removes the MariaDB container and destroys all data.

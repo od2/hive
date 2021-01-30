@@ -7,27 +7,77 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/golang/protobuf/ptypes"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.od2.network/hive-api"
 	"go.od2.network/hive-api/web"
 	"go.od2.network/hive/pkg/auth"
+	"go.od2.network/hive/pkg/items"
 	"go.od2.network/hive/pkg/mariadbtest"
 	"go.od2.network/hive/pkg/token"
+	"go.od2.network/hive/pkg/topology"
 	"go.uber.org/zap/zaptest"
 )
 
 func TestHandler(t *testing.T) {
-	mdb := mariadbtest.NewDocker(t)
-	defer mdb.Close(t)
+	// Bootstrap database.
+	testDB := mariadbtest.Default(t)
+	defer testDB.Close(t)
+	testDBConfig := testDB.MySQLConfig()
+	testDBConfig.ParseTime = true
+	testDBConfig.Loc = time.Local
+	db, err := testDB.DB("")
+	require.NoError(t, err)
+	dbx := sqlx.NewDb(db, "mysql")
 	signer := token.NewSimpleSigner(new([32]byte))
 	log := zaptest.NewLogger(t)
+	// Build topology.
+	topo := &topology.Config{}
+	topo.Collections = []*topology.Collection{
+		{
+			Name:   "yt.videos",
+			PKType: "BIGINT",
+		},
+		{
+			Name:   "some.collection",
+			PKType: "INT",
+		},
+	}
+	factory := items.Factory{
+		DB:       dbx,
+		Topology: topo,
+	}
+	for i, coll := range topo.Collections {
+		store, err := factory.GetStore(coll.Name)
+		require.NoError(t, err)
+		require.NoError(t, store.CreateTable(context.Background()))
+		// Insert a bunch of rows.
+		count := (i + 1) * 128
+		ptrs := make([]*hive.ItemPointer, count)
+		for j := 0; j < count; j++ {
+			ptrs[j] = &hive.ItemPointer{
+				Dst: &hive.ItemLocator{
+					Collection: coll.Name,
+					Id:         strconv.FormatInt(int64(j), 10),
+				},
+				Timestamp: ptypes.TimestampNow(),
+			}
+		}
+		require.NoError(t, store.InsertDiscovered(context.Background(), ptrs))
+		t.Logf("Inserted %d items to %s", count, coll.Name)
+	}
 	h := &Handler{
-		DB:     mdb.DB.DB,
-		Signer: signer,
-		Log:    log,
+		DB:       dbx,
+		Signer:   signer,
+		Log:      log,
+		Topology: topo,
+		Items:    &factory,
 	}
 	ctx := context.Background()
 	var user = auth.WebIdentity{ID: 123, Name: "terorie"}
@@ -109,4 +159,22 @@ func TestHandler(t *testing.T) {
 	require.NotNil(t, tokenList)
 	assert.Len(t, tokenList.GetTokens(), 0)
 	t.Log("Confirmed no tokens exist anymore")
+	// Get collections with row counts.
+	t.Run("GetCollections", func(t *testing.T) {
+		collectionsRes, err := h.GetCollections(ctx, &web.GetCollectionsRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, &web.GetCollectionsResponse{
+			Collections: []*web.Collection{
+				{
+					Name:      "yt.videos",
+					ItemCount: 128,
+				},
+				{
+					Name:      "some.collection",
+					ItemCount: 256,
+				},
+			},
+		}, collectionsRes)
+		t.Log("Got collections")
+	})
 }

@@ -31,7 +31,7 @@ func TestNJobs(t *testing.T) {
 	authCtx := &auth.WorkerContext{WorkerID: 1}
 	ctx = auth.WithWorkerContext(ctx, authCtx)
 	rd := redistest.NewRedis(ctx, t)
-	defer rd.Close()
+	defer rd.Close(t)
 
 	const topic = "test"
 	const partition = int32(0)
