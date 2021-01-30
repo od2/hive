@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.od2.network/hive-api"
@@ -15,15 +16,15 @@ import (
 )
 
 func TestItemStore(t *testing.T) {
-	db := predefinedDB
-	if db == nil {
-		t.Log("No pre-defined DB, using Docker")
-		docker := mariadbtest.NewDocker(t)
-		defer docker.Close(t)
-		db = docker.DB
-	}
+	testDB := mariadbtest.Default(t)
+	defer testDB.Close(t)
+	testDBConfig := testDB.MySQLConfig()
+	testDBConfig.ParseTime = true
+	testDBConfig.Loc = time.Local
+	db, err := testDB.DB("")
+	require.NoError(t, err)
 	itemStore := &Store{
-		DB:        db,
+		DB:        sqlx.NewDb(db, "mysql"),
 		TableName: "item_store_1",
 		PKType:    "BIGINT UNSIGNED",
 	}

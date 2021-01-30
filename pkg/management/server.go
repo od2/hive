@@ -4,13 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"fmt"
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/jmoiron/sqlx"
 	"go.od2.network/hive-api/web"
 	"go.od2.network/hive/pkg/auth"
+	"go.od2.network/hive/pkg/items"
 	"go.od2.network/hive/pkg/token"
+	"go.od2.network/hive/pkg/topology"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,9 +26,11 @@ import (
 
 // Handler implements the management API.
 type Handler struct {
-	DB     *sql.DB
-	Signer token.Signer
-	Log    *zap.Logger
+	DB       *sqlx.DB
+	Signer   token.Signer
+	Log      *zap.Logger
+	Topology *topology.Config
+	Items    *items.Factory
 
 	web.UnimplementedWorkerTokensServer
 }
@@ -161,4 +167,46 @@ func (h *Handler) RevokeAllWorkerTokens(ctx context.Context, _ *web.RevokeAllWor
 		return nil, status.Error(codes.Internal, "Failed to delete tokens")
 	}
 	return &web.RevokeAllWorkerTokensResponse{}, nil
+}
+
+func (h *Handler) GetCollections(ctx context.Context, _ *web.GetCollectionsRequest) (*web.GetCollectionsResponse, error) {
+	// Determine current database name.
+	var dbName string
+	err := h.DB.
+		QueryRowContext(ctx, "SELECT DATABASE() FROM DUAL;").
+		Scan(&dbName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine database name: %w", err)
+	}
+	// Scan the approximate row counts of all collections.
+	rowCountsScan, err := h.DB.QueryContext(ctx,
+		`SELECT TABLE_NAME, TABLE_ROWS FROM information_schema.tables 
+		WHERE TABLE_SCHEMA = ?;`, dbName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get row counts: %w", err)
+	}
+	rowCounts := make(map[string]int64)
+	for rowCountsScan.Next() {
+		var tableName string
+		var rowCount int64
+		if err := rowCountsScan.Scan(&tableName, &rowCount); err != nil {
+			return nil, fmt.Errorf("failed to scan row count: %w", err)
+		}
+		rowCounts[tableName] = rowCount
+	}
+	// Pack into response.
+	res := new(web.GetCollectionsResponse)
+	res.Collections = make([]*web.Collection, len(h.Topology.Collections))
+	for i, coll := range h.Topology.Collections {
+		store, err := h.Items.GetStore(coll.Name)
+		if err != nil {
+			return nil, err
+		}
+		tableName := store.TableName
+		res.Collections[i] = &web.Collection{
+			Name:      coll.Name,
+			ItemCount: rowCounts[tableName],
+		}
+	}
+	return res, nil
 }

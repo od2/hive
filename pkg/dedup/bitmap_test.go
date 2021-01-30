@@ -14,7 +14,7 @@ func TestBitMap(t *testing.T) {
 	defer cancel()
 
 	instance := redistest.NewRedis(ctx, t)
-	defer instance.Close()
+	defer instance.Close(t)
 
 	bitmap := BitMap{
 		Redis:  instance.Client,

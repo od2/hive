@@ -67,7 +67,7 @@ func Run(
 	)
 	// Assemble handlers
 	handler := &management.Handler{
-		DB:     db.DB,
+		DB:     sqlx.NewDb(db.DB, "mysql"),
 		Signer: signer,
 	}
 	web.RegisterWorkerTokensServer(server, handler)
