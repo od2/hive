@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/cobra"
+
 	"go.od2.network/hive/cmd/providers"
 	"go.od2.network/hive/pkg/authgw"
 	"go.od2.network/hive/pkg/token"
@@ -54,8 +54,8 @@ func runWorkerVerifyToken(args []string, db *sqlx.DB, signer token.Signer) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if time.Now().After(tokenInfo.ExpiresAt) {
-		fmt.Println("REJECT: Token expired")
+	if !tokenInfo.Valid {
+		fmt.Println("REJECT: Token not valid")
 		return
 	}
 	fmt.Println("OK")

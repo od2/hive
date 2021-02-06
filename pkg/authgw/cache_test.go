@@ -11,8 +11,7 @@ import (
 
 func TestCache_Invalidate(t *testing.T) {
 	backend := &mockBackend{
-		setExpires: time.Date(2100, 1, 1, 12, 0, 0, 0, time.UTC),
-		setValid:   true,
+		setValid: true,
 	}
 	cache, err := NewCache(backend, 16, 30*24*time.Hour)
 	if err != nil {
@@ -59,15 +58,13 @@ func TestCache_Invalidate(t *testing.T) {
 
 // mockBackend always returns the specified result.
 type mockBackend struct {
-	setExpires time.Time
-	setValid   bool
+	setValid bool
 }
 
 // LookupToken always returns the result specified in mockBackend.
 func (m *mockBackend) LookupToken(_ context.Context, _ token.ID) (*TokenInfo, error) {
 	return &TokenInfo{
-		ExpiresAt: m.setExpires,
-		Valid:     m.setValid,
+		Valid: m.setValid,
 	}, nil
 }
 
