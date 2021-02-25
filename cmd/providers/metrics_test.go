@@ -12,7 +12,7 @@ import (
 	"github.com/rcrowley/go-metrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric/global"
 )
 
 func TestSetupPrometheus(t *testing.T) {
@@ -26,7 +26,7 @@ func TestSetupPrometheus(t *testing.T) {
 	gauge := metrics.DefaultRegistry.GetOrRegister("gom_gauge", metrics.NewGaugeFloat64()).(metrics.GaugeFloat64)
 	gauge.Update(2)
 
-	counter, err := otel.Meter("meter").NewInt64Counter("otel_counter")
+	counter, err := global.Meter("meter").NewInt64Counter("otel_counter")
 	require.NoError(t, err)
 	counter.Add(context.Background(), 2)
 

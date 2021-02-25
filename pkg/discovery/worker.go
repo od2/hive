@@ -14,9 +14,9 @@ import (
 	"go.od2.network/hive/pkg/dedup"
 	"go.od2.network/hive/pkg/items"
 	"go.od2.network/hive/pkg/topology"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/global"
 	"go.uber.org/zap"
 )
 
@@ -241,7 +241,7 @@ func (a *metrics) init() {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 	a.shards = make(map[topology.Shard]*shardMetrics)
-	meter := otel.Meter("hive.discovery")
+	meter := global.Meter("hive.discovery")
 	obs := meter.NewBatchObserver(func(ctx context.Context, res metric.BatchObserverResult) {
 		a.lock.Lock()
 		defer a.lock.Unlock()

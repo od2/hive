@@ -8,7 +8,7 @@ import (
 	"go.od2.network/hive/pkg/njobs"
 	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/topology/redisshard"
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric/global"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -37,7 +37,7 @@ var Providers = []interface{}{
 	func(t *topology.Config) *topology.RedisShardFactory { return t.RedisShardFactory },
 	redisshard.NewFactory,
 	// OpenTelemetry
-	otel.GetMeterProvider,
+	global.GetMeterProvider,
 }
 
 // NewApp creates an fx.App with default infrastructure.

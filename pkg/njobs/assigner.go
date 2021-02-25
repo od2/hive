@@ -10,9 +10,9 @@ import (
 	"github.com/Shopify/sarama"
 	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/topology/redisshard"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/global"
 	"go.uber.org/zap"
 )
 
@@ -311,7 +311,7 @@ func (a *assignerMetrics) init() {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 	a.shards = make(map[topology.Shard]*assignerShardMetrics)
-	meter := otel.Meter("hive.assigner")
+	meter := global.Meter("hive.assigner")
 	obs := meter.NewBatchObserver(func(ctx context.Context, res metric.BatchObserverResult) {
 		a.lock.Lock()
 		defer a.lock.Unlock()

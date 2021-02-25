@@ -8,8 +8,8 @@ import (
 	prometheusmetrics "github.com/deathowl/go-metrics-prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rcrowley/go-metrics"
-	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/metric/prometheus"
+	"go.opentelemetry.io/otel/metric/global"
 )
 
 // GOMPrometheusSync specifies the time interval to sync go-metrics to Prometheus.
@@ -33,6 +33,6 @@ func SetupPrometheus() (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to build OpenTelemetry Prometheus exporter: %w", err)
 	}
-	otel.SetMeterProvider(exporter.MeterProvider())
+	global.SetMeterProvider(exporter.MeterProvider())
 	return exporter, nil
 }
