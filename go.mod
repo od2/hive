@@ -21,9 +21,9 @@ require (
 	github.com/stretchr/testify v1.7.0
 	go.od2.network/hive-api v0.2.0
 	go.od2.network/hive-worker v0.1.0
-	go.opentelemetry.io/otel v0.17.0
+	go.opentelemetry.io/otel v0.19.0
 	go.opentelemetry.io/otel/exporters/metric/prometheus v0.17.0
-	go.opentelemetry.io/otel/metric v0.17.0
+	go.opentelemetry.io/otel/metric v0.19.0
 	go.uber.org/fx v1.13.1
 	go.uber.org/zap v1.16.0
 	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
