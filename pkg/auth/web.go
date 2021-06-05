@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/go-github/v33/github"
+	"github.com/google/go-github/v35/github"
 	"github.com/hashicorp/golang-lru/simplelru"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"

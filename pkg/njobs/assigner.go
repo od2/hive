@@ -10,7 +10,7 @@ import (
 	"github.com/Shopify/sarama"
 	"go.od2.network/hive/pkg/topology"
 	"go.od2.network/hive/pkg/topology/redisshard"
-	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/global"
 	"go.uber.org/zap"
@@ -265,7 +265,7 @@ var onceAssignerMetrics sync.Once
 // assignerShardMetrics holds OpenTelemetry metrics of a single shard.
 type assignerShardMetrics struct {
 	shard topology.Shard
-	kvs   []label.KeyValue
+	kvs   []attribute.KeyValue
 	// Assigner
 	assignBatches         int64 // atomic
 	assignProgressBatches int64 // atomic
@@ -283,9 +283,9 @@ func newAssignerShardMetrics(shard topology.Shard) *assignerShardMetrics {
 	defer m.lock.Unlock()
 	shardMetrics := &assignerShardMetrics{
 		shard: shard,
-		kvs: []label.KeyValue{
-			label.String("hive.collection", shard.Collection),
-			label.Int32("hive.partition", shard.Partition),
+		kvs: []attribute.KeyValue{
+			attribute.String("hive.collection", shard.Collection),
+			attribute.Int("hive.partition", int(shard.Partition)),
 		},
 	}
 	m.shards[shard] = shardMetrics
