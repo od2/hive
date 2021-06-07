@@ -11,7 +11,7 @@ require (
 	github.com/go-redis/redis/v8 v8.10.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/golang/protobuf v1.5.2
-	github.com/google/go-github/v35 v35.2.0
+	github.com/google/go-github/v35 v35.3.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/klauspost/compress v1.13.0 // indirect
