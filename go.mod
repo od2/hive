@@ -21,7 +21,7 @@ require (
 	github.com/ory/dockertest/v3 v3.6.5
 	github.com/pelletier/go-toml v1.9.2
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
-	github.com/prometheus/client_golang v1.10.0
+	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/common v0.27.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/sirupsen/logrus v1.8.1 // indirect
