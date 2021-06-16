@@ -19,7 +19,7 @@ require (
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/opencontainers/runc v1.0.0-rc95 // indirect
 	github.com/ory/dockertest/v3 v3.6.5
-	github.com/pelletier/go-toml v1.9.2
+	github.com/pelletier/go-toml v1.9.3
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/common v0.27.0 // indirect
