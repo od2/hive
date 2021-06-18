@@ -16,9 +16,8 @@ require (
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/klauspost/compress v1.13.0 // indirect
 	github.com/magiconair/properties v1.8.5 // indirect
-	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/opencontainers/runc v1.0.0-rc95 // indirect
-	github.com/ory/dockertest/v3 v3.6.5
+	github.com/ory/dockertest/v3 v3.7.0
 	github.com/pelletier/go-toml v1.9.3
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
 	github.com/prometheus/client_golang v1.11.0
