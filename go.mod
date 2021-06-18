@@ -33,9 +33,9 @@ require (
 	github.com/stretchr/testify v1.7.0
 	go.od2.network/hive-api v0.2.1
 	go.od2.network/hive-worker v0.1.0
-	go.opentelemetry.io/otel v0.20.0
-	go.opentelemetry.io/otel/exporters/metric/prometheus v0.20.0
-	go.opentelemetry.io/otel/metric v0.20.0
+	go.opentelemetry.io/otel v1.0.0-RC1
+	go.opentelemetry.io/otel/exporters/metric/prometheus v0.21.0
+	go.opentelemetry.io/otel/metric v0.21.0
 	go.uber.org/fx v1.13.1
 	go.uber.org/multierr v1.7.0 // indirect
 	go.uber.org/zap v1.17.0
