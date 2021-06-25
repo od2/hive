@@ -15,8 +15,6 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/klauspost/compress v1.13.0 // indirect
-	github.com/magiconair/properties v1.8.5 // indirect
-	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/opencontainers/runc v1.0.0-rc95 // indirect
 	github.com/ory/dockertest/v3 v3.6.5
 	github.com/pelletier/go-toml v1.9.3
@@ -25,11 +23,8 @@ require (
 	github.com/prometheus/common v0.27.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/sirupsen/logrus v1.8.1 // indirect
-	github.com/spf13/afero v1.6.0 // indirect
-	github.com/spf13/cast v1.3.1 // indirect
 	github.com/spf13/cobra v1.1.3
-	github.com/spf13/jwalterweatherman v1.1.0 // indirect
-	github.com/spf13/viper v1.7.1
+	github.com/spf13/viper v1.8.1
 	github.com/stretchr/testify v1.7.0
 	go.od2.network/hive-api v0.2.1
 	go.od2.network/hive-worker v0.1.0
@@ -43,5 +38,4 @@ require (
 	golang.org/x/oauth2 v0.0.0-20210514164344-f6687ab2804c
 	golang.org/x/sys v0.0.0-20210603125802-9665404d3644 // indirect
 	google.golang.org/grpc v1.38.0
-	gopkg.in/ini.v1 v1.62.0 // indirect
 )
